@@ -135,7 +135,7 @@ EOF
 chmod -R u+rwX,go+rX "$BUNDLE_DIR"
 
 if [[ "$SIGN_IDENTITY" == "-" ]]; then
-    codesign --force --deep --entitlements "$ENTITLEMENTS_FILE" --sign - "$BUNDLE_DIR"
+    codesign --force --deep --sign - "$BUNDLE_DIR"
 else
     codesign --force --deep --options runtime --entitlements "$ENTITLEMENTS_FILE" --sign "$SIGN_IDENTITY" "$BUNDLE_DIR"
 fi

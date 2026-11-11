@@ -6,31 +6,26 @@
 
 ---
 
-## Sikkerhet, åpenhet og kildekode
+## Installasjon
 
-FlowFile er utviklet som et uavhengig prosjekt uten kommersielt Apple Developer-abonnement ennå. For at du (og enhver sikkerhetskontroll) skal kunne verifisere nøyaktig hva programmet gjør, er alt lagt helt åpent:
+### Alternativ A: Sømløs installasjon med Homebrew *(Anbefales – ingen Gatekeeper-advarsel)*
+Har du [Homebrew](https://brew.sh) på Macen, installerer disse to linjene `FlowFile.app` rett i `Applications`, kontrollerer `SHA-256`-sjekksummen og klargjør appen så den åpner seg rett på første klikk uten bokser i *System Settings*:
 
-1. **100 % åpen kildekode uten tredjepartsbiblioteker:**  
-   Hele kildekoden ligger åpent i [`Sources/FlowFile/`](Sources/FlowFile), og [`Package.swift`](Package.swift) har **null eksterne avhengigheter** – kun Apples egne rammeverk (`AppKit`, `SwiftUI`, `QuickLook`, `Network`, `CryptoKit`, `CoreImage`). Ingen telemetri, ingen analyse-SDK-er og ingen skjulte bakgrunnsprosesser.
-2. **Offentlig kompilering via GitHub Actions:**  
-   Utgivelsene under **[Releases](https://github.com/nordiccraft/FlowFile/releases/latest)** bygges direkte fra kildekoden i dette repoet på GitHub sine egne servere via [`.github/workflows/release.yml`](.github/workflows/release.yml), med åpen byggelogg og tilhørende `SHA256SUMS.txt`.
-3. **Kun ren `.dmg` (ingen installasjonsskript):**  
-   FlowFile leveres som et standard `.dmg`-diskbilde der du selv drar `FlowFile.app` til `Applications` – helt uten `.pkg`-skript eller administratorrettigheter.
-4. **Standard macOS-rettigheter per mappe:**  
-   FlowFile krever ikke full tilgang ved installasjon. macOS spør kun om vanlig mappetillatelse første gang du selv navigerer inn i mapper som *Skrivebord*, *Dokumenter* eller *Nedlastinger* (*Full disktilgang* i Systeminnstillinger er helt valgfritt for de som ønsker å slippe enkeltspørsmål per mappe, på samme måte som i ForkLift og Path Finder).
-5. **Verifiserte oppdateringer:**  
-   Når du selv velger å oppdatere i appen (*FlowFile → Se etter oppdateringer...*), hentes pakken over HTTPS fra dette repoet og kontrolleres mot utgivelsens `SHA256SUMS.txt` (`CryptoKit.SHA256`) og `codesign` før oppdatering.
+```zsh
+brew tap nordiccraft/flowfile https://github.com/nordiccraft/FlowFile
+brew install --cask flowfile
+```
 
----
+*(Oppdateres senere enten rett inne i FlowFile via **FlowFile → Se etter oppdateringer...**, eller med `brew upgrade --cask flowfile`.)*
 
-## Installasjon (fra ferdigbygd `.dmg` eller egen kompilering)
+### Alternativ B: Ferdigbygd `.dmg` fra GitHub Releases
+1. Last ned siste **`.dmg`-fil** fra **[GitHub Releases](https://github.com/nordiccraft/FlowFile/releases/latest)** og dra `FlowFile.app` over til `Applications`.
+2. Dobbeltklikk på `FlowFile` i `Applications`. Fordi prosjektet ikke bruker betalt Apple-notarisering ennå, viser macOS meldingen *"FlowFile Not Opened"* første gang:
+   - Klikk **Done** (til venstre).
+   - Åpne **System Settings → Privacy & Security**, bla ned til **Security** og klikk **Open Anyway** (*Åpne likevel*).
 
-### Alternativ A: Ferdigbygd `.dmg` fra GitHub Releases
-1. Last ned **`FlowFile-1.0.1-Installer.dmg`** fra **[GitHub Releases](https://github.com/nordiccraft/FlowFile/releases/latest)** og dra `FlowFile.app` til `Applications`.
-2. Fordi appen er lokalt ad-hoc-signert i GitHub Actions uten betalt Apple Developer ID-sertifikat, vil macOS Gatekeeper varsle ved første oppstart at utvikleren ikke er notarisert hos Apple. Hvis du har verifisert koden/kilden og ønsker å åpne appen, godkjenner du den under **Systeminnstillinger → Personvern og sikkerhet**.
-
-### Alternativ B: Kompiler selv rett fra kildekoden (tar ca. 20 sekunder)
-Vil du kompilere din egen lokale kopi rett fra kildekoden (da signeres binærfilen lokalt på din egen Mac uten nettleser-nedlasting), kreves kun Xcode / Swift Command Line Tools på macOS 26:
+### Alternativ C: Kompiler selv rett fra kildekoden (tar ca. 20 sekunder)
+Vil du kompilere din egen lokale kopi direkte fra kildekoden på egen Mac (krever Xcode / Swift Command Line Tools på macOS 26):
 
 ```zsh
 git clone https://github.com/nordiccraft/FlowFile.git
@@ -38,6 +33,21 @@ cd FlowFile
 ./scripts/build-app.sh release
 cp -R build/FlowFile.app /Applications/
 ```
+
+---
+
+## Sikkerhet, åpenhet og kildekode
+
+FlowFile er utviklet som et uavhengig prosjekt uten kommersielt Apple Developer-abonnement ennå. For at du (og enhver sikkerhetskontroll) skal kunne verifisere nøyaktig hva programmet gjør, ligger alt åpent:
+
+1. **100 % åpen kildekode uten tredjepartsbiblioteker:**  
+   Hele kildekoden ligger åpent i [`Sources/FlowFile/`](Sources/FlowFile), og [`Package.swift`](Package.swift) har **null eksterne avhengigheter** – kun Apples egne rammeverk (`AppKit`, `SwiftUI`, `QuickLook`, `Network`, `CryptoKit`, `CoreImage`). Ingen telemetri, ingen analyse-SDK-er og ingen skjulte bakgrunnsprosesser.
+2. **Offentlig kompilering via GitHub Actions:**  
+   Utgivelsene under **[Releases](https://github.com/nordiccraft/FlowFile/releases/latest)** og [`Casks/flowfile.rb`](Casks/flowfile.rb) bygges og oppdateres direkte fra kildekoden på GitHub sine egne servere via [`.github/workflows/release.yml`](.github/workflows/release.yml), med åpen byggelogg og tilhørende `SHA256SUMS.txt`.
+3. **Standard macOS-rettigheter per mappe:**  
+   FlowFile krever ikke full tilgang ved installasjon. macOS spør kun om vanlig mappetillatelse første gang du selv navigerer inn i mapper som *Skrivebord*, *Dokumenter* eller *Nedlastinger* (*Full disktilgang* i Systeminnstillinger er helt valgfritt for de som ønsker å slippe enkeltspørsmål per mappe, slik som i ForkLift og Path Finder).
+4. **Verifiserte oppdateringer:**  
+   Når du selv velger å oppdatere i appen (*FlowFile → Se etter oppdateringer...*), hentes pakken over HTTPS fra dette repoet og kontrolleres mot utgivelsens `SHA256SUMS.txt` (`CryptoKit.SHA256`), `CFBundleIdentifier` og `codesign` før oppdatering.
 
 ---
 

@@ -42,7 +42,7 @@ EOF
     hdiutil create \
         -volname "${APP_NAME} ${APP_VERSION}" \
         -srcfolder "$DMG_STAGE" \
-        -fs HFS+ \
+        -fs APFS \
         -ov \
         -format UDZO \
         "$DMG_FINAL" >/dev/null

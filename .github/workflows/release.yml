@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+    paths-ignore:
+      - "Casks/**"
     tags:
       - "v*"
   workflow_dispatch:
@@ -18,13 +20,15 @@ jobs:
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Show toolchain
         run: |
           sw_vers
           swift --version
 
-      - name: Build signed app bundle, DMG & SHA-256 checksums
+      - name: Build signed app bundle, APFS DMG & SHA-256 checksums
         env:
           PUBLISH_GITHUB: "0"
           FLOWFILE_REPO: ${{ github.repository }}
@@ -32,27 +36,36 @@ jobs:
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             VERSION="${GITHUB_REF#refs/tags/v}"
           else
-            VERSION="1.0.1"
+            VERSION="1.0.2"
           fi
           chmod +x scripts/build-app.sh scripts/build-installer.sh scripts/release.sh
           ./scripts/release.sh "${VERSION}" "Bygget automatisk og verifiserbart fra åpen kildekode via GitHub Actions."
           echo "RELEASE_VERSION=${VERSION}" >> "$GITHUB_ENV"
 
-      - name: Publish GitHub Release on tag push
+      - name: Publish GitHub Release & Update Homebrew Cask on tag push
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           REL_DIR="build/releases/v${RELEASE_VERSION}"
+          ZIP_SHA256="$(shasum -a 256 "${REL_DIR}/FlowFile-Update.zip" | awk '{print $1}')"
           NOTES_FILE="${REL_DIR}/NOTES.md"
+
           cat > "${NOTES_FILE}" <<EOF
           ### FlowFile ${RELEASE_VERSION} for macOS 26
 
           Bygget direkte fra åpen Swift-kildekode på GitHub Actions (\`macos-26\`).
 
-          - **Installer:** Last ned \`FlowFile-${RELEASE_VERSION}-Installer.dmg\` og dra \`FlowFile.app\` til \`Applications\`.
-          - **Verifisering:** Kontroller sjekksummer i \`SHA256SUMS.txt\` og se full offentlig byggelogg under [Actions](https://github.com/${GITHUB_REPOSITORY}/actions).
+          #### Sømløs installasjon med Homebrew (uten Gatekeeper-advarsel)
+          \`\`\`zsh
+          brew tap nordiccraft/flowfile https://github.com/${GITHUB_REPOSITORY}
+          brew install --cask flowfile
+          \`\`\`
 
+          #### Manuell installasjon med \`.dmg\`
+          Last ned \`FlowFile-${RELEASE_VERSION}-Installer.dmg\`, dra \`FlowFile.app\` til \`Applications\`, og godkjenn første gang under *System Settings → Privacy & Security → Open Anyway*.
+
+          #### SHA-256 sjekksummer
           \`\`\`
           $(cat "${REL_DIR}/SHA256SUMS.txt")
           \`\`\`
@@ -72,4 +85,40 @@ jobs:
               "${REL_DIR}/SHA256SUMS.txt" \
               --title "FlowFile ${RELEASE_VERSION}" \
               --notes-file "${NOTES_FILE}"
+          fi
+
+          # Automatically update Homebrew Cask on main with exact version & SHA-256
+          git fetch origin main
+          git checkout -B main origin/main
+          mkdir -p Casks
+          cat > Casks/flowfile.rb <<RUBY
+          cask "flowfile" do
+            version "${RELEASE_VERSION}"
+            sha256 "${ZIP_SHA256}"
+
+            url "https://github.com/${GITHUB_REPOSITORY}/releases/download/v#{version}/FlowFile-Update.zip"
+            name "FlowFile"
+            desc "Native macOS file explorer combining Windows Explorer and Total Commander"
+            homepage "https://github.com/${GITHUB_REPOSITORY}"
+
+            app "FlowFile.app"
+
+            postflight do
+              system_command "/usr/bin/xattr",
+                             args: ["-dr", "com.apple.quarantine", "#{appdir}/FlowFile.app"],
+                             sudo: false
+            end
+
+            zap trash: [
+              "~/Library/Preferences/com.flowfile.app.plist",
+            ]
+          end
+          RUBY
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/flowfile.rb
+          if ! git diff --cached --quiet; then
+            git commit -m "Oppdater Homebrew Cask til v${RELEASE_VERSION}"
+            git push origin main
           fi
