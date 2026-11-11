@@ -1,0 +1,21 @@
+Copyright (c) 2026 NordicCraft. All rights reserved.
+
+Source-Available Audit & Personal Use Notice
+--------------------------------------------
+The source code in this repository is published publicly for transparency,
+security verification, and personal or internal evaluation.
+
+1. Permitted Use:
+   - Anyone may read, inspect, audit, and verify the source code in full.
+   - Individuals and colleagues may compile from source or install official
+     releases from https://github.com/nordiccraft/FlowFile for personal or
+     internal everyday work.
+
+2. Restrictions:
+   - Commercial redistribution, resale, rebranding, or publishing modified
+     or unmodified copies under another name or store listing is prohibited
+     without prior written permission from NordicCraft.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
