@@ -13,7 +13,13 @@ if [[ $# -lt 1 ]]; then
 fi
 
 NEW_VERSION="${1#v}"
-RELEASE_NOTES="${2:-Feilrettinger og forbedringer i FlowFile ${NEW_VERSION}.}"
+if [[ $# -ge 2 && -n "${2}" ]]; then
+    RELEASE_NOTES="${2}"
+elif [[ -f "$PROJECT_DIR/scripts/extract-release-notes.py" && -f "$PROJECT_DIR/CHANGELOG.md" ]]; then
+    RELEASE_NOTES="$(python3 "$PROJECT_DIR/scripts/extract-release-notes.py" "$PROJECT_DIR/CHANGELOG.md" "$NEW_VERSION")"
+else
+    RELEASE_NOTES="Feilrettinger og forbedringer i FlowFile ${NEW_VERSION}."
+fi
 
 export APP_VERSION="$NEW_VERSION"
 export BUILD_NUMBER="$(date +%Y%m%d%H%M)"

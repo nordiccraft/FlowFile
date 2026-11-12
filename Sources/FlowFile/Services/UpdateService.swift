@@ -1,5 +1,6 @@
 import AppKit
 import CryptoKit
+import Darwin
 import Foundation
 import Observation
 
@@ -28,6 +29,7 @@ enum UpdateCheckState: Equatable {
 final class UpdateService: NSObject, URLSessionDownloadDelegate {
     var state: UpdateCheckState = .idle
     var availableRelease: AppReleaseInfo? = nil
+    var currentVersionNotes: String = ""
     var dismissedBannerForVersion: String? = nil
 
     var checkAutomaticallyOnLaunch: Bool {
@@ -70,6 +72,13 @@ final class UpdateService: NSObject, URLSessionDownloadDelegate {
 
     @MainActor
     func checkForUpdates(silent: Bool = false) async {
+        switch state {
+        case .downloading, .installing:
+            return
+        default:
+            break
+        }
+
         let source = effectiveSource
         guard !source.isEmpty else {
             if !silent {
@@ -121,6 +130,9 @@ final class UpdateService: NSObject, URLSessionDownloadDelegate {
                 self.state = .updateAvailable(release)
             } else {
                 self.availableRelease = nil
+                if Self.normalizeVersion(release.version) == Self.normalizeVersion(currentAppVersion) {
+                    self.currentVersionNotes = release.releaseNotes
+                }
                 if !silent {
                     self.state = .upToDate(currentVersion: currentAppVersion)
                 } else {
@@ -140,7 +152,14 @@ final class UpdateService: NSObject, URLSessionDownloadDelegate {
     // MARK: - Download, Verify SHA-256 & Code Signature, Replace Bundle & Relaunch
 
     @MainActor
-    func downloadAndInstall(_ release: AppReleaseInfo) async {
+    func downloadAndInstall(_ release: AppReleaseInfo, onBeforeTerminate: (() -> Void)? = nil) async {
+        switch state {
+        case .downloading, .installing:
+            return
+        default:
+            break
+        }
+
         guard let downloadURL = release.zipDownloadURL,
               downloadURL.scheme?.lowercased() == "https" else {
             if let webURL = release.htmlReleaseURL {
@@ -155,60 +174,79 @@ final class UpdateService: NSObject, URLSessionDownloadDelegate {
         }
 
         state = .downloading(progress: 0.02)
+        let runningBundleURL = Bundle.main.bundleURL.standardizedFileURL
 
         do {
             let downloadedTempURL = try await downloadFileWithProgress(from: downloadURL)
             state = .installing
 
-            let stagingDir = URL(fileURLWithPath: NSTemporaryDirectory())
-                .appendingPathComponent("flowfile-update-\(UUID().uuidString)", isDirectory: true)
-            try FileManager.default.createDirectory(at: stagingDir, withIntermediateDirectories: true)
+            let prepared = try await Task.detached(priority: .userInitiated) { () -> (extractedApp: URL, destinationApp: URL, stagingDir: URL) in
+                let stagingDir = URL(fileURLWithPath: NSTemporaryDirectory())
+                    .appendingPathComponent("flowfile-update-\(UUID().uuidString)", isDirectory: true)
+                try FileManager.default.createDirectory(at: stagingDir, withIntermediateDirectories: true)
 
-            let zipFilename = downloadURL.lastPathComponent.isEmpty ? "FlowFile-Update.zip" : downloadURL.lastPathComponent
-            let zipTarget = stagingDir.appendingPathComponent(zipFilename)
-            try FileManager.default.moveItem(at: downloadedTempURL, to: zipTarget)
+                let zipFilename = downloadURL.lastPathComponent.isEmpty ? "FlowFile-Update.zip" : downloadURL.lastPathComponent
+                let zipTarget = stagingDir.appendingPathComponent(zipFilename)
+                try FileManager.default.moveItem(at: downloadedTempURL, to: zipTarget)
 
-            // Require SHA256SUMS.txt over HTTPS (fail closed if missing, unreadable, or mismatched)
-            guard let checksumsURL = release.checksumsURL,
-                  checksumsURL.scheme?.lowercased() == "https" else {
-                throw NSError(
-                    domain: "UpdateService",
-                    code: 10,
-                    userInfo: [NSLocalizedDescriptionKey: tr(
-                        "Utgivelsen mangler gyldig SHA256SUMS.txt over HTTPS. Oppdateringen ble avbrutt.",
-                        "Release is missing a valid HTTPS SHA256SUMS.txt manifest. Update aborted."
-                    )]
-                )
+                // Require SHA256SUMS.txt over HTTPS (fail closed if missing, unreadable, or mismatched)
+                guard let checksumsURL = release.checksumsURL,
+                      checksumsURL.scheme?.lowercased() == "https" else {
+                    throw NSError(
+                        domain: "UpdateService",
+                        code: 10,
+                        userInfo: [NSLocalizedDescriptionKey: tr(
+                            "Utgivelsen mangler gyldig SHA256SUMS.txt over HTTPS. Oppdateringen ble avbrutt.",
+                            "Release is missing a valid HTTPS SHA256SUMS.txt manifest. Update aborted."
+                        )]
+                    )
+                }
+                try await Self.verifySHA256Checksum(of: zipTarget, filename: zipFilename, checksumsURL: checksumsURL)
+
+                let extractDir = stagingDir.appendingPathComponent("extracted", isDirectory: true)
+                try FileManager.default.createDirectory(at: extractDir, withIntermediateDirectories: true)
+
+                try Self.extractZip(at: zipTarget, into: extractDir)
+
+                let extractedApp = extractDir.appendingPathComponent("FlowFile.app", isDirectory: true)
+                let extractedBinary = extractedApp.appendingPathComponent("Contents/MacOS/FlowFile")
+                guard FileManager.default.fileExists(atPath: extractedBinary.path) else {
+                    throw NSError(
+                        domain: "UpdateService",
+                        code: 2,
+                        userInfo: [NSLocalizedDescriptionKey: tr(
+                            "Oppdateringspakken inneholdt ikke en gyldig FlowFile.app.",
+                            "Update archive did not contain a valid FlowFile.app."
+                        )]
+                    )
+                }
+
+                try Self.verifyBundleIdentityAndSignature(at: extractedApp, runningBundleURL: runningBundleURL)
+
+                let destinationAppURL = Self.resolveTargetAppLocation(runningBundleURL: runningBundleURL)
+                try Self.preflightValidateTargetLocation(destinationAppURL)
+                return (extractedApp, destinationAppURL, stagingDir)
+            }.value
+
+            // Dismiss any open SwiftUI / AppKit modal sheets first so NSApp.terminate is never blocked by a modal sheet
+            onBeforeTerminate?()
+            for window in NSApp.windows {
+                if let sheet = window.attachedSheet {
+                    window.endSheet(sheet)
+                }
             }
-            try await Self.verifySHA256Checksum(of: zipTarget, filename: zipFilename, checksumsURL: checksumsURL)
+            ShareHubService.cleanupStaleStagingDirectories(maxAgeSeconds: 0)
 
-            let extractDir = stagingDir.appendingPathComponent("extracted", isDirectory: true)
-            try FileManager.default.createDirectory(at: extractDir, withIntermediateDirectories: true)
-
-            try Self.extractZip(at: zipTarget, into: extractDir)
-
-            let extractedApp = extractDir.appendingPathComponent("FlowFile.app", isDirectory: true)
-            let extractedBinary = extractedApp.appendingPathComponent("Contents/MacOS/FlowFile")
-            guard FileManager.default.fileExists(atPath: extractedBinary.path) else {
-                throw NSError(
-                    domain: "UpdateService",
-                    code: 2,
-                    userInfo: [NSLocalizedDescriptionKey: tr(
-                        "Oppdateringspakken inneholdt ikke en gyldig FlowFile.app.",
-                        "Update archive did not contain a valid FlowFile.app."
-                    )]
-                )
-            }
-
-            try Self.verifyBundleIdentityAndSignature(at: extractedApp)
-
-            let destinationAppURL = Self.resolveTargetAppLocation()
-            try Self.preflightValidateTargetLocation(destinationAppURL)
-            try Self.spawnAtomicUpdaterAndTerminate(
-                newAppURL: extractedApp,
-                destinationAppURL: destinationAppURL,
-                stagingDir: stagingDir
+            try Self.spawnAtomicUpdater(
+                newAppURL: prepared.extractedApp,
+                destinationAppURL: prepared.destinationApp,
+                stagingDir: prepared.stagingDir
             )
+
+            NSApp.terminate(nil)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                Darwin.exit(0)
+            }
         } catch {
             state = .error(tr(
                 "Oppdatering feilet: \(error.localizedDescription)",
@@ -223,6 +261,8 @@ final class UpdateService: NSObject, URLSessionDownloadDelegate {
         try await withCheckedThrowingContinuation { continuation in
             self.downloadContinuation = continuation
             let config = URLSessionConfiguration.ephemeral
+            config.timeoutIntervalForRequest = 30
+            config.timeoutIntervalForResource = 180
             let session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
             var request = URLRequest(url: url)
             request.setValue("FlowFile-Updater/\(currentAppVersion)", forHTTPHeaderField: "User-Agent")
@@ -239,10 +279,19 @@ final class UpdateService: NSObject, URLSessionDownloadDelegate {
         totalBytesWritten: Int64,
         totalBytesExpectedToWrite: Int64
     ) {
-        guard totalBytesExpectedToWrite > 0 else { return }
-        let fraction = min(0.99, max(0.02, Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)))
+        let fraction: Double
+        if totalBytesExpectedToWrite > 0 {
+            fraction = min(0.99, max(0.03, Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)))
+        } else {
+            // Smooth asymptotic fallback when CDN omits Content-Length
+            let estimated = 1.0 - exp(-Double(max(0, totalBytesWritten)) / 3_500_000.0)
+            fraction = min(0.92, max(0.05, estimated))
+        }
         Task { @MainActor [weak self] in
-            self?.state = .downloading(progress: fraction)
+            guard let self else { return }
+            if case .downloading = self.state {
+                self.state = .downloading(progress: fraction)
+            }
         }
     }
 
@@ -251,6 +300,19 @@ final class UpdateService: NSObject, URLSessionDownloadDelegate {
         downloadTask: URLSessionDownloadTask,
         didFinishDownloadingTo location: URL
     ) {
+        if let http = downloadTask.response as? HTTPURLResponse,
+           !(200...299).contains(http.statusCode) {
+            let err = NSError(
+                domain: "UpdateService",
+                code: http.statusCode,
+                userInfo: [NSLocalizedDescriptionKey: "HTTP \(http.statusCode)"]
+            )
+            downloadContinuation?.resume(throwing: err)
+            downloadContinuation = nil
+            session.finishTasksAndInvalidate()
+            return
+        }
+
         let persisted = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("flowfile-dl-\(UUID().uuidString).bin")
         do {
@@ -298,7 +360,7 @@ final class UpdateService: NSObject, URLSessionDownloadDelegate {
         return URL(string: "https://api.github.com/repos/\(segments[0])/\(segments[1])/releases/latest")
     }
 
-    private static func parseReleasePayload(data: Data) throws -> AppReleaseInfo {
+    static func parseReleasePayload(data: Data) throws -> AppReleaseInfo {
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw NSError(domain: "UpdateService", code: 3, userInfo: [NSLocalizedDescriptionKey: "Invalid JSON"])
         }
@@ -310,7 +372,8 @@ final class UpdateService: NSObject, URLSessionDownloadDelegate {
         }
 
         let title = (json["name"] as? String) ?? "FlowFile \(cleanVersion)"
-        let notes = (json["body"] as? String) ?? (json["notes"] as? String) ?? ""
+        let rawNotes = (json["body"] as? String) ?? (json["notes"] as? String) ?? ""
+        let notes = cleanReleaseNotes(rawNotes)
         let published = (json["published_at"] as? String)
         let htmlURL = (json["html_url"] as? String).flatMap(URL.init(string:))
 
@@ -339,6 +402,91 @@ final class UpdateService: NSObject, URLSessionDownloadDelegate {
             checksumsURL: checksumsURL,
             htmlReleaseURL: htmlURL
         )
+    }
+
+    /// Strips GitHub installation instructions, Homebrew commands, and SHA-256 checksum footers
+    /// from a GitHub Release body so only human-readable "What's new" notes are shown in-app.
+    static func cleanReleaseNotes(_ rawBody: String) -> String {
+        let normalized = rawBody
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+
+        let cutoffMarkers = [
+            "<!-- flowfile-install-footer -->",
+            "#### sømløs installasjon",
+            "#### manuell installasjon",
+            "#### sha-256",
+            "#### seamless installation",
+            "#### manual installation",
+        ]
+
+        var sliced = normalized
+        let lower = sliced.lowercased()
+        var earliestCut: String.Index? = nil
+        for marker in cutoffMarkers {
+            if let range = lower.range(of: marker) {
+                if let current = earliestCut {
+                    if range.lowerBound < current {
+                        earliestCut = range.lowerBound
+                    }
+                } else {
+                    earliestCut = range.lowerBound
+                }
+            }
+        }
+        if let cut = earliestCut {
+            sliced = String(sliced[..<cut])
+        }
+
+        var outputLines: [String] = []
+        for rawLine in sliced.components(separatedBy: "\n") {
+            let trimmed = rawLine.trimmingCharacters(in: .whitespaces)
+            let lowerTrimmed = trimmed.lowercased()
+
+            // Skip redundant generic release headers / taglines at the very start
+            if outputLines.allSatisfy({ $0.isEmpty }) {
+                if trimmed.isEmpty { continue }
+                if lowerTrimmed.hasPrefix("### flowfile ") || lowerTrimmed.hasPrefix("## flowfile ") {
+                    continue
+                }
+                if lowerTrimmed.hasPrefix("bygget direkte fra åpen swift-kildekode") {
+                    continue
+                }
+                if lowerTrimmed.hasPrefix("hva er nytt og forbedret i flowfile")
+                    || lowerTrimmed.hasPrefix("### hva er nytt")
+                    || lowerTrimmed.hasPrefix("## hva er nytt")
+                    || lowerTrimmed.hasPrefix("what's new in flowfile") {
+                    continue
+                }
+            }
+
+            if trimmed == "---" || trimmed == "***" {
+                continue
+            }
+
+            if trimmed.hasPrefix("- ") || trimmed.hasPrefix("* ") {
+                outputLines.append("• " + String(trimmed.dropFirst(2)).trimmingCharacters(in: .whitespaces))
+            } else {
+                outputLines.append(trimmed)
+            }
+        }
+
+        // Collapse excessive blank lines
+        var collapsed: [String] = []
+        var previousBlank = false
+        for line in outputLines {
+            if line.isEmpty {
+                if !previousBlank && !collapsed.isEmpty {
+                    collapsed.append("")
+                }
+                previousBlank = true
+            } else {
+                collapsed.append(line)
+                previousBlank = false
+            }
+        }
+
+        return collapsed.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     static func normalizeVersion(_ raw: String) -> String {
@@ -434,7 +582,7 @@ final class UpdateService: NSObject, URLSessionDownloadDelegate {
         }
     }
 
-    private static func verifyBundleIdentityAndSignature(at appURL: URL) throws {
+    private static func verifyBundleIdentityAndSignature(at appURL: URL, runningBundleURL: URL) throws {
         let plistURL = appURL.appendingPathComponent("Contents/Info.plist")
         guard let plistData = try? Data(contentsOf: plistURL),
               let plist = try? PropertyListSerialization.propertyList(from: plistData, format: nil) as? [String: Any],
@@ -464,9 +612,8 @@ final class UpdateService: NSObject, URLSessionDownloadDelegate {
 
         // If the currently running bundle is signed with an Apple Developer TeamIdentifier,
         // enforce that the incoming bundle is signed by the exact same TeamIdentifier.
-        let runningURL = Bundle.main.bundleURL.standardizedFileURL
-        if runningURL.pathExtension == "app",
-           let currentTeam = extractTeamIdentifier(for: runningURL) {
+        if runningBundleURL.pathExtension == "app",
+           let currentTeam = extractTeamIdentifier(for: runningBundleURL) {
             let incomingTeam = extractTeamIdentifier(for: appURL)
             if incomingTeam != currentTeam {
                 throw NSError(domain: "UpdateService", code: 13, userInfo: [
@@ -538,15 +685,14 @@ final class UpdateService: NSObject, URLSessionDownloadDelegate {
         }
     }
 
-    private static func resolveTargetAppLocation() -> URL {
-        let runningURL = Bundle.main.bundleURL.standardizedFileURL
-        if runningURL.pathExtension == "app" {
-            return runningURL
+    private static func resolveTargetAppLocation(runningBundleURL: URL) -> URL {
+        if runningBundleURL.pathExtension == "app" {
+            return runningBundleURL
         }
         return URL(fileURLWithPath: "/Applications/FlowFile.app")
     }
 
-    private static func spawnAtomicUpdaterAndTerminate(
+    private static func spawnAtomicUpdater(
         newAppURL: URL,
         destinationAppURL: URL,
         stagingDir: URL
@@ -561,15 +707,32 @@ final class UpdateService: NSObject, URLSessionDownloadDelegate {
         exec >>"$LOG_FILE" 2>&1
         echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Starting FlowFile atomic update for PID $FF_PID"
 
-        for i in {1..50}; do
+        for i in {1..12}; do
             if ! kill -0 "$FF_PID" 2>/dev/null; then
                 break
             fi
-            sleep 0.2
+            sleep 0.15
         done
 
         if kill -0 "$FF_PID" 2>/dev/null; then
-            echo "ERROR: Old FlowFile process $FF_PID did not terminate in time; aborting update."
+            echo "Sending SIGTERM to old FlowFile process $FF_PID..."
+            kill -TERM "$FF_PID" 2>/dev/null || true
+            for i in {1..15}; do
+                if ! kill -0 "$FF_PID" 2>/dev/null; then
+                    break
+                fi
+                sleep 0.15
+            done
+        fi
+
+        if kill -0 "$FF_PID" 2>/dev/null; then
+            echo "Sending SIGKILL to unresponsive FlowFile process $FF_PID..."
+            kill -KILL "$FF_PID" 2>/dev/null || true
+            sleep 0.2
+        fi
+
+        if kill -0 "$FF_PID" 2>/dev/null; then
+            echo "ERROR: Old FlowFile process $FF_PID could not be terminated; aborting update."
             rm -rf "$FF_STAGE_DIR" 2>/dev/null || true
             exit 1
         fi
@@ -585,6 +748,8 @@ final class UpdateService: NSObject, URLSessionDownloadDelegate {
             exit 1
         fi
 
+        /usr/bin/xattr -dr com.apple.quarantine "$NEW_STAGE" 2>/dev/null || true
+
         if [[ -e "$FF_DEST_APP" ]]; then
             if ! mv "$FF_DEST_APP" "$BACKUP_APP"; then
                 echo "ERROR: Failed to move existing app to backup $BACKUP_APP"
@@ -597,14 +762,14 @@ final class UpdateService: NSObject, URLSessionDownloadDelegate {
         if mv "$NEW_STAGE" "$FF_DEST_APP"; then
             rm -rf "$BACKUP_APP" "$FF_STAGE_DIR" 2>/dev/null || true
             echo "Update succeeded; relaunching $FF_DEST_APP"
-            open "$FF_DEST_APP"
+            /usr/bin/open "$FF_DEST_APP"
         else
             echo "ERROR: Failed to move $NEW_STAGE into $FF_DEST_APP; restoring backup"
             if [[ -e "$BACKUP_APP" ]]; then
                 mv "$BACKUP_APP" "$FF_DEST_APP" 2>/dev/null || true
             fi
             rm -rf "$NEW_STAGE" "$FF_STAGE_DIR" 2>/dev/null || true
-            open "$FF_DEST_APP" || true
+            /usr/bin/open "$FF_DEST_APP" || true
             exit 1
         fi
         """
@@ -621,10 +786,9 @@ final class UpdateService: NSObject, URLSessionDownloadDelegate {
         env["FF_DEST_APP"] = destinationAppURL.path
         env["FF_STAGE_DIR"] = stagingDir.path
         launcher.environment = env
+        launcher.standardInput = FileHandle.nullDevice
         launcher.standardOutput = FileHandle.nullDevice
         launcher.standardError = FileHandle.nullDevice
         try launcher.run()
-
-        NSApp.terminate(nil)
     }
 }

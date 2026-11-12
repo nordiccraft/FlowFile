@@ -38,7 +38,7 @@ struct MainWindowView: View {
 
                         Spacer()
 
-                        Button(workspace.tr("Se endringer / Oppdater...", "Release Notes / Update...")) {
+                        Button(workspace.tr("Se hva som er nytt / Oppdater...", "What's New / Update...")) {
                             workspace.isUpdateSheetVisible = true
                         }
                         .buttonStyle(.borderedProminent)

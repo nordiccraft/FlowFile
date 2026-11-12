@@ -219,6 +219,69 @@ enum FlowFileVerificationSuite {
         }
     }
 
+    static func releaseNotesCleaningAndPayloadParsing() throws {
+        let rawGitHubBody = """
+        Hva er nytt og forbedret i FlowFile 1.0.4:
+
+        - Ny «Hva er nytt»-visning i oppdateringsvinduet.
+        - Fikset automatisk omstart ved åpent modalt ark.
+
+        <!-- flowfile-install-footer -->
+        ---
+
+        #### Sømløs installasjon med Homebrew (uten Gatekeeper-advarsel)
+        ```zsh
+        brew install --cask flowfile
+        ```
+
+        #### SHA-256 sjekksummer
+        ```
+        74203fd93f65c5c30a95b2c3e111c520e2b59b9ff1d63af21d81ce1447c5fb35  FlowFile-Update.zip
+        ```
+        """
+
+        let cleaned = UpdateService.cleanReleaseNotes(rawGitHubBody)
+        try expect(cleaned.contains("• Ny «Hva er nytt»-visning i oppdateringsvinduet."))
+        try expect(cleaned.contains("• Fikset automatisk omstart ved åpent modalt ark."))
+        try expect(!cleaned.contains("brew install"))
+        try expect(!cleaned.contains("SHA-256"))
+        try expect(!cleaned.contains("flowfile-install-footer"))
+
+        let legacyBody = """
+        ### FlowFile 1.0.3 for macOS 26
+
+        Bygget direkte fra åpen Swift-kildekode på GitHub Actions (`macos-26`).
+
+        #### Sømløs installasjon med Homebrew (uten Gatekeeper-advarsel)
+        brew install --cask flowfile
+        """
+        let cleanedLegacy = UpdateService.cleanReleaseNotes(legacyBody)
+        try expect(cleanedLegacy.isEmpty)
+
+        let payload: [String: Any] = [
+            "tag_name": "v1.0.4",
+            "name": "FlowFile 1.0.4",
+            "body": rawGitHubBody,
+            "assets": [
+                [
+                    "name": "FlowFile-Update.zip",
+                    "browser_download_url": "https://github.com/nordiccraft/FlowFile/releases/download/v1.0.4/FlowFile-Update.zip"
+                ],
+                [
+                    "name": "SHA256SUMS.txt",
+                    "browser_download_url": "https://github.com/nordiccraft/FlowFile/releases/download/v1.0.4/SHA256SUMS.txt"
+                ]
+            ]
+        ]
+        let payloadData = try JSONSerialization.data(withJSONObject: payload)
+        let parsed = try UpdateService.parseReleasePayload(data: payloadData)
+        try expect(parsed.version == "1.0.4")
+        try expect(parsed.releaseNotes.contains("• Ny «Hva er nytt»-visning"))
+        try expect(!parsed.releaseNotes.contains("brew install"))
+        try expect(parsed.zipDownloadURL?.absoluteString.hasSuffix("FlowFile-Update.zip") == true)
+        try expect(parsed.checksumsURL?.absoluteString.hasSuffix("SHA256SUMS.txt") == true)
+    }
+
     // MARK: - 11, 12, 13 & Path Traversal: ArchiveService & TabState
 
     static func archiveSecurityAndWildcards() async throws {
@@ -381,6 +444,7 @@ enum FlowFileVerificationSuite {
         try await batchRenameRollbackOnMidBatchFailure()
         try await singleItemCaseOnlyRename()
         try await updateVerificationFailsClosed()
+        try releaseNotesCleaningAndPayloadParsing()
         try await archiveSecurityAndWildcards()
         try await folderNamedLikeArchive()
         try wifiShareSecurity()
@@ -406,6 +470,10 @@ final class FlowFileTests: XCTestCase {
 
     func testUpdateVerificationFailsClosed() async throws {
         try await FlowFileVerificationSuite.updateVerificationFailsClosed()
+    }
+
+    func testReleaseNotesCleaningAndPayloadParsing() throws {
+        try FlowFileVerificationSuite.releaseNotesCleaningAndPayloadParsing()
     }
 
     func testArchiveSecurityAndWildcards() async throws {
@@ -438,7 +506,7 @@ final class FlowFileTests: XCTestCase {
 struct LocalCLTTestRunner {
     static func main() async throws {
         try await FlowFileVerificationSuite.runAll()
-        print("ALL 10 FLOWFILE TEST SUITES PASSED")
+        print("ALL 11 FLOWFILE TEST SUITES PASSED")
     }
 }
 #endif

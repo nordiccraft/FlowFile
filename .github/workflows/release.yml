@@ -42,8 +42,8 @@ jobs:
             LATEST_TAG="$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")"
             VERSION="${LATEST_TAG#v}"
           fi
-          chmod +x scripts/build-app.sh scripts/build-installer.sh scripts/release.sh scripts/update-cask.py
-          ./scripts/release.sh "${VERSION}" "Bygget automatisk og verifiserbart fra åpen kildekode via GitHub Actions."
+          chmod +x scripts/build-app.sh scripts/build-installer.sh scripts/release.sh scripts/update-cask.py scripts/extract-release-notes.py
+          ./scripts/release.sh "${VERSION}"
           echo "RELEASE_VERSION=${VERSION}" >> "$GITHUB_ENV"
 
       - name: Publish GitHub Release & Update Homebrew Cask on tag push
@@ -54,11 +54,15 @@ jobs:
           REL_DIR="build/releases/v${RELEASE_VERSION}"
           ZIP_SHA256="$(shasum -a 256 "${REL_DIR}/FlowFile-Update.zip" | awk '{print $1}')"
           NOTES_FILE="${REL_DIR}/NOTES.md"
+          CHANGELOG_NOTES="$(python3 scripts/extract-release-notes.py CHANGELOG.md "${RELEASE_VERSION}")"
 
           cat > "${NOTES_FILE}" <<EOF
-          ### FlowFile ${RELEASE_VERSION} for macOS 26
+          Hva er nytt og forbedret i FlowFile ${RELEASE_VERSION}:
 
-          Bygget direkte fra åpen Swift-kildekode på GitHub Actions (\`macos-26\`).
+          ${CHANGELOG_NOTES}
+
+          <!-- flowfile-install-footer -->
+          ---
 
           #### Sømløs installasjon med Homebrew (uten Gatekeeper-advarsel)
           \`\`\`zsh
