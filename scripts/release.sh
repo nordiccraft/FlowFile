@@ -53,7 +53,7 @@ fi
 echo "[release] Release artifacts generated in: $RELEASE_DIR"
 cat "$RELEASE_DIR/SHA256SUMS.txt"
 
-if [[ -n "${FLOWFILE_REPO:-}" && "${PUBLISH_GITHUB:-1}" == "1" ]]; then
+if [[ -n "${FLOWFILE_REPO:-}" && "${PUBLISH_GITHUB:-0}" == "1" ]]; then
     echo "[release] Publishing v${NEW_VERSION} to GitHub Releases (${FLOWFILE_REPO})..."
     ASSETS=("$RELEASE_DIR/FlowFile-Update.zip" "$RELEASE_DIR/SHA256SUMS.txt")
     if [[ -f "$RELEASE_DIR/FlowFile-${NEW_VERSION}-Installer.dmg" ]]; then
@@ -65,4 +65,10 @@ if [[ -n "${FLOWFILE_REPO:-}" && "${PUBLISH_GITHUB:-1}" == "1" ]]; then
         --title "FlowFile ${NEW_VERSION}" \
         --notes "$RELEASE_NOTES" \
         "${ASSETS[@]}"
+
+    if [[ -f "$PROJECT_DIR/Casks/flowfile.rb" ]]; then
+        ZIP_SHA256="$(shasum -a 256 "$UPDATE_ZIP" | awk '{print $1}')"
+        python3 "$PROJECT_DIR/scripts/update-cask.py" "$PROJECT_DIR/Casks/flowfile.rb" "$NEW_VERSION" "$ZIP_SHA256"
+        echo "[release] Updated Casks/flowfile.rb with version ${NEW_VERSION} and sha256 ${ZIP_SHA256} (commit & push to sync Homebrew)."
+    fi
 fi

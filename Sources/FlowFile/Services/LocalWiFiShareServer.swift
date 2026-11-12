@@ -2,6 +2,7 @@ import Darwin
 import Foundation
 import Network
 import Observation
+import Security
 
 @Observable
 final class LocalWiFiShareServer {
@@ -11,12 +12,14 @@ final class LocalWiFiShareServer {
     var sharedFileSize: Int64 = 0
     var downloadCount: Int = 0
     var autoStopAfterFirstDownload: Bool = true
+    var autoExpireNanoseconds: UInt64 = 600_000_000_000
     var errorMessage: String? = nil
 
     private var listener: NWListener?
     private var servedFileURL: URL?
-    private var securityToken: String = ""
+    private(set) var securityToken: String = ""
     private var autoExpireTask: Task<Void, Never>?
+    private var currentSessionID = UUID()
 
     deinit {
         stop()
@@ -32,11 +35,14 @@ final class LocalWiFiShareServer {
             return
         }
 
+        let sessionID = UUID()
+        self.currentSessionID = sessionID
         self.servedFileURL = fileURL
         self.sharedFileName = fileURL.lastPathComponent
         let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
         self.sharedFileSize = (attrs?[.size] as? Int64) ?? 0
-        self.securityToken = String(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(8)).lowercased()
+        self.securityToken = Self.generateSecurityToken()
+        let expireNs = self.autoExpireNanoseconds
 
         do {
             let nwListener = try NWListener(using: .tcp, on: .any)
@@ -44,7 +50,7 @@ final class LocalWiFiShareServer {
 
             nwListener.stateUpdateHandler = { [weak self] state in
                 DispatchQueue.main.async {
-                    guard let self else { return }
+                    guard let self, self.currentSessionID == sessionID else { return }
                     switch state {
                     case .ready:
                         if let port = nwListener.port?.rawValue {
@@ -62,15 +68,20 @@ final class LocalWiFiShareServer {
             }
 
             nwListener.newConnectionHandler = { [weak self] connection in
-                self?.handleConnection(connection)
+                self?.handleConnection(connection, sessionID: sessionID)
             }
 
             nwListener.start(queue: .global(qos: .userInitiated))
 
-            // Automatically shut down after 10 minutes for safety
+            // Automatically shut down after expiry duration unless cancelled or superseded by a newer share
             autoExpireTask = Task { @MainActor [weak self] in
-                try? await Task.sleep(nanoseconds: 600_000_000_000)
-                self?.stop()
+                do {
+                    try await Task.sleep(nanoseconds: expireNs)
+                } catch {
+                    return
+                }
+                guard let self, !Task.isCancelled, self.currentSessionID == sessionID else { return }
+                self.stop()
             }
         } catch {
             errorMessage = error.localizedDescription
@@ -78,18 +89,21 @@ final class LocalWiFiShareServer {
     }
 
     func stop() {
+        currentSessionID = UUID()
         autoExpireTask?.cancel()
         autoExpireTask = nil
         listener?.cancel()
         listener = nil
+        servedFileURL = nil
         isRunning = false
         shareURLString = ""
     }
 
-    private func handleConnection(_ connection: NWConnection) {
+    private func handleConnection(_ connection: NWConnection, sessionID: UUID) {
         connection.start(queue: .global(qos: .userInitiated))
         connection.receive(minimumIncompleteLength: 1, maximumLength: 8192) { [weak self] data, _, _, error in
-            guard let self, error == nil, let data, let request = String(data: data, encoding: .utf8) else {
+            guard let self, self.currentSessionID == sessionID,
+                  error == nil, let data, let request = String(data: data, encoding: .utf8) else {
                 connection.cancel()
                 return
             }
@@ -105,7 +119,7 @@ final class LocalWiFiShareServer {
             if path == "/s/\(self.securityToken)" {
                 self.sendLandingPage(over: connection)
             } else if path.hasPrefix("/d/\(self.securityToken)") {
-                self.streamServedFile(over: connection)
+                self.streamServedFile(over: connection, sessionID: sessionID)
             } else {
                 let notFound = "HTTP/1.1 404 Not Found\r\nContent-Length: 9\r\nConnection: close\r\n\r\nNot Found"
                 connection.send(content: notFound.data(using: .utf8), completion: .contentProcessed { _ in
@@ -115,18 +129,58 @@ final class LocalWiFiShareServer {
         }
     }
 
-    private func sendLandingPage(over connection: NWConnection) {
-        let sizeStr = ByteFormatter.string(fromByteCount: sharedFileSize)
-        let encodedName = sharedFileName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? "fil"
-        let downloadHref = "/d/\(securityToken)/\(encodedName)"
+    static func generateSecurityToken() -> String {
+        var bytes = [UInt8](repeating: 0, count: 16)
+        if SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess {
+            return bytes.map { String(format: "%02x", $0) }.joined()
+        }
+        return (UUID().uuidString + UUID().uuidString)
+            .replacingOccurrences(of: "-", with: "")
+            .prefix(32)
+            .lowercased()
+    }
 
-        let html = """
+    static func escapeHTML(_ raw: String) -> String {
+        var out = ""
+        out.reserveCapacity(raw.count)
+        for ch in raw {
+            switch ch {
+            case "&": out.append("&amp;")
+            case "<": out.append("&lt;")
+            case ">": out.append("&gt;")
+            case "\"": out.append("&quot;")
+            case "'": out.append("&#39;")
+            default: out.append(ch)
+            }
+        }
+        return out
+    }
+
+    static func contentDispositionHeaderValue(for fileName: String) -> String {
+        let strippedControls = fileName.unicodeScalars.filter { scalar in
+            scalar.value >= 0x20 && scalar.value != 0x7F && scalar != "\"" && scalar != "\\"
+        }
+        let asciiFallback = String(String.UnicodeScalarView(strippedControls.map { $0.isASCII ? $0 : "_" }))
+        let cleanFallback = asciiFallback.isEmpty ? "download" : asciiFallback
+        var rfc5987Allowed = CharacterSet.alphanumerics
+        rfc5987Allowed.insert(charactersIn: "-._~")
+        let encodedUTF8 = fileName.addingPercentEncoding(withAllowedCharacters: rfc5987Allowed) ?? cleanFallback
+        return "attachment; filename=\"\(cleanFallback)\"; filename*=UTF-8''\(encodedUTF8)"
+    }
+
+    static func buildLandingPageHTML(fileName: String, sizeString: String, securityToken: String) -> String {
+        let escapedName = escapeHTML(fileName)
+        let escapedSize = escapeHTML(sizeString)
+        let encodedPathName = fileName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? "fil"
+        let downloadHref = "/d/\(securityToken)/\(encodedPathName)"
+
+        return """
         <!DOCTYPE html>
         <html lang="no">
         <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>FlowFile Deling – \(sharedFileName)</title>
+        <title>FlowFile Deling – \(escapedName)</title>
         <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #0f172a; color: #f8fafc; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
         .card { background: rgba(30, 41, 59, 0.9); border: 1px solid rgba(148, 163, 184, 0.25); border-radius: 18px; padding: 28px; max-width: 420px; width: 100%; text-align: center; box-shadow: 0 20px 40px rgba(0,0,0,0.4); }
@@ -137,13 +191,22 @@ final class LocalWiFiShareServer {
         </head>
         <body>
         <div class="card">
-            <h2>\(sharedFileName)</h2>
-            <p>\(sizeStr) • Delt direkte fra FlowFile</p>
+            <h2>\(escapedName)</h2>
+            <p>\(escapedSize) • Delt direkte fra FlowFile</p>
             <a class="btn" href="\(downloadHref)">Last ned fil</a>
         </div>
         </body>
         </html>
         """
+    }
+
+    private func sendLandingPage(over connection: NWConnection) {
+        let sizeStr = ByteFormatter.string(fromByteCount: sharedFileSize)
+        let html = Self.buildLandingPageHTML(
+            fileName: sharedFileName,
+            sizeString: sizeStr,
+            securityToken: securityToken
+        )
 
         let bodyData = Data(html.utf8)
         let header = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: \(bodyData.count)\r\nConnection: close\r\n\r\n"
@@ -155,19 +218,19 @@ final class LocalWiFiShareServer {
         })
     }
 
-    private func streamServedFile(over connection: NWConnection) {
+    private func streamServedFile(over connection: NWConnection, sessionID: UUID) {
         guard let fileURL = servedFileURL,
               let fileHandle = try? FileHandle(forReadingFrom: fileURL) else {
             connection.cancel()
             return
         }
 
-        let safeAscii = sharedFileName.replacingOccurrences(of: "\"", with: "")
+        let disposition = Self.contentDispositionHeaderValue(for: sharedFileName)
         let header = [
             "HTTP/1.1 200 OK",
             "Content-Type: application/octet-stream",
             "Content-Length: \(sharedFileSize)",
-            "Content-Disposition: attachment; filename=\"\(safeAscii)\"",
+            "Content-Disposition: \(disposition)",
             "Connection: close",
             "",
             ""
@@ -179,21 +242,22 @@ final class LocalWiFiShareServer {
                 connection.cancel()
                 return
             }
-            self?.sendNextChunk(fileHandle: fileHandle, over: connection)
+            self?.sendNextChunk(fileHandle: fileHandle, over: connection, sessionID: sessionID)
         })
     }
 
-    private func sendNextChunk(fileHandle: FileHandle, over connection: NWConnection) {
+    private func sendNextChunk(fileHandle: FileHandle, over connection: NWConnection, sessionID: UUID) {
         let chunk = (try? fileHandle.read(upToCount: 65_536)) ?? Data()
         if chunk.isEmpty {
             try? fileHandle.close()
             connection.cancel()
             DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
+                guard let self, self.currentSessionID == sessionID else { return }
                 self.downloadCount += 1
                 if self.autoStopAfterFirstDownload {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-                        self?.stop()
+                        guard let self, self.currentSessionID == sessionID else { return }
+                        self.stop()
                     }
                 }
             }
@@ -206,7 +270,7 @@ final class LocalWiFiShareServer {
                 connection.cancel()
                 return
             }
-            self?.sendNextChunk(fileHandle: fileHandle, over: connection)
+            self?.sendNextChunk(fileHandle: fileHandle, over: connection, sessionID: sessionID)
         })
     }
 

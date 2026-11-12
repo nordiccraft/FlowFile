@@ -118,7 +118,7 @@ struct AppKitFileTableView: NSViewRepresentable {
         let newFolderSizes = tab.calculatedFolderSizes
         let newGitBadges = tab.gitBadges
         let newDiffStatuses = tab.diffStatuses
-        let cutSet: Set<URL> = workspace.clipboardOperation == .cut ? Set(workspace.clipboardURLs) : []
+        let cutSet: Set<URL> = workspace.activeCutURLs
 
         let needsReload = coordinator.items != newItems
             || coordinator.lastMarked != newMarked
@@ -252,6 +252,7 @@ struct AppKitFileTableView: NSViewRepresentable {
 
         // Drag & Drop support
         func tableView(_ tableView: NSTableView, pasteboardWriterForRow row: Int) -> (any NSPasteboardWriting)? {
+            guard !tab.isInsideArchive else { return nil }
             guard row >= 0 && row < items.count else { return nil }
             return items[row].url as NSURL
         }
@@ -262,12 +263,26 @@ struct AppKitFileTableView: NSViewRepresentable {
             proposedRow row: Int,
             proposedDropOperation dropOperation: NSTableView.DropOperation
         ) -> NSDragOperation {
-            let moveMask = NSEvent.modifierFlags.contains(.option) ? NSDragOperation.copy : NSDragOperation.move
+            guard !tab.isInsideArchive else { return [] }
+            let urls = (info.draggingPasteboard.readObjects(
+                forClasses: [NSURL.self],
+                options: [.urlReadingFileURLsOnly: true]
+            ) as? [URL]) ?? []
+
+            let targetDirectory: URL
             if dropOperation == .on, row >= 0 && row < items.count, items[row].isNavigableFolder {
-                return moveMask
+                targetDirectory = items[row].navigationTargetURL
+            } else {
+                tableView.setDropRow(-1, dropOperation: .on)
+                targetDirectory = tab.currentURL
             }
-            tableView.setDropRow(-1, dropOperation: .on)
-            return moveMask
+
+            let op = FileSystemService.preferredDragOperation(
+                for: urls,
+                to: targetDirectory,
+                modifierFlags: NSEvent.modifierFlags
+            )
+            return op == .copy ? .copy : .move
         }
 
         func tableView(
@@ -276,6 +291,7 @@ struct AppKitFileTableView: NSViewRepresentable {
             row: Int,
             dropOperation: NSTableView.DropOperation
         ) -> Bool {
+            guard !tab.isInsideArchive else { return false }
             guard workspace.guardNotInTourSandbox() else { return false }
             guard let urls = info.draggingPasteboard.readObjects(
                 forClasses: [NSURL.self],
@@ -286,26 +302,23 @@ struct AppKitFileTableView: NSViewRepresentable {
 
             let targetDirectory: URL
             if dropOperation == .on, row >= 0 && row < items.count, items[row].isNavigableFolder {
-                targetDirectory = items[row].url
+                targetDirectory = items[row].navigationTargetURL
             } else {
                 targetDirectory = tab.currentURL
             }
 
-            let copyInsteadOfMove = NSEvent.modifierFlags.contains(.option)
-            do {
-                if copyInsteadOfMove {
-                    try FileSystemService.copyItems(urls, toDirectory: targetDirectory)
-                    workspace.showStatus("Kopierte \(urls.count) element(er) til \(targetDirectory.lastPathComponent)")
-                } else {
-                    try FileSystemService.moveItems(urls, toDirectory: targetDirectory)
-                    workspace.showStatus("Flyttet \(urls.count) element(er) til \(targetDirectory.lastPathComponent)")
-                }
-                workspace.refreshAllTabs()
-                return true
-            } catch {
-                workspace.alertErrorMessage = error.localizedDescription
-                return false
-            }
+            let op = FileSystemService.preferredDragOperation(
+                for: urls,
+                to: targetDirectory,
+                modifierFlags: NSEvent.modifierFlags
+            )
+            workspace.transferQueue.enqueue(operation: op, urls: urls, to: targetDirectory)
+            workspace.showStatus(
+                op == .copy
+                    ? "Kopierer \(urls.count) element(er) til \(targetDirectory.lastPathComponent)..."
+                    : "Flytter \(urls.count) element(er) til \(targetDirectory.lastPathComponent)..."
+            )
+            return true
         }
 
         // MARK: NSTableViewDelegate

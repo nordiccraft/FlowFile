@@ -7,6 +7,7 @@ struct ShareHubSheetView: View {
 
     @State private var options = SharePreparationOptions()
     @State private var wifiServer = LocalWiFiShareServer()
+    @State private var wifiStagingFileURL: URL? = nil
     @State private var feedbackBanner: String? = nil
     @Environment(\.dismiss) private var dismiss
 
@@ -62,9 +63,8 @@ struct ShareHubSheetView: View {
                 HStack(spacing: 16) {
                     Toggle("Pakk som Windows-ren .zip (uten .DS_Store / __MACOSX)", isOn: $options.packageAsCleanZip)
                         .font(.system(size: 12.5))
-                        .disabled(options.usePassword)
 
-                    if options.packageAsCleanZip || options.usePassword {
+                    if options.packageAsCleanZip {
                         HStack(spacing: 4) {
                             Text("Navn:")
                                 .font(.system(size: 11.5))
@@ -77,25 +77,6 @@ struct ShareHubSheetView: View {
                                 .font(.system(size: 11.5, design: .monospaced))
                                 .foregroundStyle(.secondary)
                         }
-                    }
-                }
-
-                HStack(spacing: 14) {
-                    Toggle("Beskytt med passord (kryptert ZIP)", isOn: Binding(
-                        get: { options.usePassword },
-                        set: { enabled in
-                            options.usePassword = enabled
-                            if enabled {
-                                options.packageAsCleanZip = true
-                            }
-                        }
-                    ))
-                    .font(.system(size: 12.5))
-
-                    if options.usePassword {
-                        SecureField("Skriv passord...", text: $options.password)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 200)
                     }
                 }
 
@@ -222,11 +203,17 @@ struct ShareHubSheetView: View {
                                     runPreparedAction { urls in
                                         do {
                                             let res = try ShareHubService.copyIntoCloudSharedFolder(urls, account: account)
+                                            for u in urls {
+                                                ShareHubService.cleanupStagingRoot(for: u)
+                                            }
                                             workspace.navigateActiveTab(to: res.folder)
                                             workspace.activeTab.selectedURLs = Set(res.copied)
                                             workspace.showStatus("Lagt i «Delt fra FlowFile» i \(account.displayName)!")
                                             dismiss()
                                         } catch {
+                                            for u in urls {
+                                                ShareHubService.cleanupStagingRoot(for: u)
+                                            }
                                             workspace.alertErrorMessage = error.localizedDescription
                                         }
                                     }
@@ -300,7 +287,7 @@ struct ShareHubSheetView: View {
                                 Spacer()
 
                                 Button("Stopp Wi-Fi-deling", role: .destructive) {
-                                    wifiServer.stop()
+                                    stopWiFiAndCleanup()
                                 }
                                 .font(.system(size: 11.5))
                                 .buttonStyle(.glass)
@@ -349,7 +336,7 @@ struct ShareHubSheetView: View {
                 }
                 Spacer()
                 Button("Lukk") {
-                    wifiServer.stop()
+                    stopWiFiAndCleanup()
                     dismiss()
                 }
                 .keyboardShortcut(.cancelAction)
@@ -371,7 +358,7 @@ struct ShareHubSheetView: View {
             }
         }
         .onDisappear {
-            wifiServer.stop()
+            stopWiFiAndCleanup()
         }
     }
 
@@ -424,6 +411,14 @@ struct ShareHubSheetView: View {
         }
     }
 
+    private func stopWiFiAndCleanup() {
+        wifiServer.stop()
+        if let staged = wifiStagingFileURL {
+            ShareHubService.cleanupStagingRoot(for: staged)
+            wifiStagingFileURL = nil
+        }
+    }
+
     private func startWiFiQRShare() {
         if workspace.tour.isSandboxActive {
             feedbackBanner = workspace.tr(
@@ -432,6 +427,7 @@ struct ShareHubSheetView: View {
             )
             return
         }
+        stopWiFiAndCleanup()
         var qrOptions = options
         if hasDirectoriesOrMultiple {
             qrOptions.packageAsCleanZip = true
@@ -439,6 +435,7 @@ struct ShareHubSheetView: View {
         do {
             let prepared = try ShareHubService.prepareItems(targetItems, options: qrOptions)
             if let singleFile = prepared.first {
+                wifiStagingFileURL = singleFile
                 wifiServer.startSharing(fileURL: singleFile)
             }
         } catch {

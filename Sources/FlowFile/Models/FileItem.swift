@@ -48,6 +48,7 @@ struct FileItem: Identifiable, Hashable {
     let name: String
     let stemName: String
     let fileExtension: String
+    let rawFileExtension: String
     let isDirectory: Bool
     let isPackage: Bool
     let isSymbolicLink: Bool
@@ -111,18 +112,22 @@ struct FileItem: Identifiable, Hashable {
         if isDirectory {
             self.stemName = name
             self.fileExtension = ""
+            self.rawFileExtension = ""
             self.kindDescription = "Arkivmappe"
         } else {
             let ext = (name as NSString).pathExtension
             if name.hasPrefix(".") && !name.dropFirst().contains(".") {
                 self.stemName = name
                 self.fileExtension = ""
+                self.rawFileExtension = ""
             } else if ext.isEmpty {
                 self.stemName = name
                 self.fileExtension = ""
+                self.rawFileExtension = ""
             } else {
                 self.stemName = String(name.dropLast(ext.count + 1))
                 self.fileExtension = ext.lowercased()
+                self.rawFileExtension = ext
             }
             self.kindDescription = ext.isEmpty ? "Arkivfil" : "\(ext.uppercased())-arkivfil"
         }
@@ -179,17 +184,21 @@ struct FileItem: Identifiable, Hashable {
         if (isDir && !isPkg) || targetFolder {
             self.stemName = fullName
             self.fileExtension = ""
+            self.rawFileExtension = ""
         } else {
             let ext = standardized.pathExtension
             if fullName.hasPrefix(".") && !fullName.dropFirst().contains(".") {
                 self.stemName = fullName
                 self.fileExtension = ""
+                self.rawFileExtension = ""
             } else if ext.isEmpty {
                 self.stemName = fullName
                 self.fileExtension = ""
+                self.rawFileExtension = ""
             } else {
                 self.stemName = String(fullName.dropLast(ext.count + 1))
                 self.fileExtension = ext.lowercased()
+                self.rawFileExtension = ext
             }
         }
 

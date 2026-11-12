@@ -12,17 +12,38 @@ enum ArchiveKind {
     case tar
 }
 
+enum ArchiveError: LocalizedError {
+    case unsafeEntryPath(String)
+    case commandFailed(String)
+    case compressionFailed(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .unsafeEntryPath(let path):
+            return "Utrygg sti i arkivet ble avvist: \(path)"
+        case .commandFailed(let detail):
+            return detail.isEmpty
+                ? "Kunne ikke lese eller pakke ut arkivet (korrupt eller passordbeskyttet fil)."
+                : "Arkivfeil: \(detail)"
+        case .compressionFailed(let detail):
+            return detail.isEmpty
+                ? "Kunne ikke opprette .zip-arkivet."
+                : "Komprimering feilet: \(detail)"
+        }
+    }
+}
+
 enum ArchiveService {
+    private static let compoundTarSuffixes: [String] = [
+        ".tar.gz", ".tar.bz2", ".tar.xz", ".tar.zst", ".tgz", ".tbz2", ".txz"
+    ]
+
     static func archiveKind(for url: URL) -> ArchiveKind? {
         let lower = url.lastPathComponent.lowercased()
         if lower.hasSuffix(".zip") {
             return .zip
         }
-        if lower.hasSuffix(".tar")
-            || lower.hasSuffix(".tar.gz")
-            || lower.hasSuffix(".tgz")
-            || lower.hasSuffix(".tar.bz2")
-            || lower.hasSuffix(".tar.xz") {
+        if lower.hasSuffix(".tar") || compoundTarSuffixes.contains(where: { lower.hasSuffix($0) }) {
             return .tar
         }
         return nil
@@ -30,6 +51,51 @@ enum ArchiveService {
 
     static func isSupportedArchive(_ url: URL) -> Bool {
         archiveKind(for: url) != nil
+    }
+
+    static func archiveBaseName(for archiveURL: URL) -> String {
+        let name = archiveURL.lastPathComponent
+        let lower = name.lowercased()
+        for suffix in compoundTarSuffixes where lower.hasSuffix(suffix) {
+            let base = String(name.dropLast(suffix.count))
+            return base.isEmpty ? "\(name)_utpakket" : base
+        }
+        let ext = archiveURL.pathExtension
+        if ext.isEmpty {
+            return "\(name)_utpakket"
+        }
+        let stem = String(name.dropLast(ext.count + 1))
+        return stem.isEmpty ? "\(name)_utpakket" : stem
+    }
+
+    /// Rejects empty paths, `.` segments, and `..` segments to prevent Zip-Slip / path traversal.
+    static func sanitizeArchiveEntryPath(_ raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard !trimmed.isEmpty else { return nil }
+        let components = trimmed.split(separator: "/", omittingEmptySubsequences: false)
+        guard !components.isEmpty else { return nil }
+        for comp in components {
+            if comp.isEmpty || comp == "." || comp == ".." {
+                return nil
+            }
+        }
+        return components.joined(separator: "/")
+    }
+
+    /// Escapes fnmatch glob characters (`\`, `[`, `]`, `*`, `?`) for `/usr/bin/unzip` and `/usr/bin/tar`.
+    static func escapeArchiveGlob(_ literalPath: String) -> String {
+        var escaped = ""
+        escaped.reserveCapacity(literalPath.count + 4)
+        for ch in literalPath {
+            switch ch {
+            case "\\", "[", "]", "*", "?":
+                escaped.append("\\")
+                escaped.append(ch)
+            default:
+                escaped.append(ch)
+            }
+        }
+        return escaped
     }
 
     static func listVirtualDirectory(
@@ -62,8 +128,7 @@ enum ArchiveService {
         var directChildren: [String: AggregatedChild] = [:]
 
         for entry in rawEntries {
-            let cleanPath = entry.entryPath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-            guard !cleanPath.isEmpty else { continue }
+            guard let cleanPath = sanitizeArchiveEntryPath(entry.entryPath) else { continue }
             if cleanPath.hasPrefix("__MACOSX/") || cleanPath == "__MACOSX" { continue }
 
             let remainder: String
@@ -135,39 +200,63 @@ enum ArchiveService {
         to destinationDirectory: URL
     ) throws -> [URL] {
         guard let kind = archiveKind(for: archiveURL), !entryPaths.isEmpty else { return [] }
+
+        var validatedEntries: [(cleanPath: String, isDirHint: Bool)] = []
+        for rawPath in entryPaths {
+            guard let clean = sanitizeArchiveEntryPath(rawPath) else {
+                throw ArchiveError.unsafeEntryPath(rawPath)
+            }
+            validatedEntries.append((cleanPath: clean, isDirHint: rawPath.hasSuffix("/")))
+        }
+
         let tempDir = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent("FlowFileExtract_\(UUID().uuidString)")
+            .appendingPathComponent("FlowFileExtract_\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tempDir) }
 
         switch kind {
         case .zip:
             var args = ["-q", "-o", archiveURL.path]
-            for path in entryPaths {
-                if path.hasSuffix("/") {
-                    args.append("\(path)*")
+            for item in validatedEntries {
+                let escaped = escapeArchiveGlob(item.cleanPath)
+                if item.isDirHint {
+                    args.append("\(escaped)/*")
                 } else {
-                    args.append(path)
+                    args.append(escaped)
                 }
             }
             args.append(contentsOf: ["-d", tempDir.path])
             _ = try runProcess("/usr/bin/unzip", arguments: args)
 
         case .tar:
-            var args = ["-xf", archiveURL.path, "-C", tempDir.path]
-            for path in entryPaths {
-                let clean = path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-                args.append(clean)
+            var args = ["-xf", archiveURL.path, "-C", tempDir.path, "--"]
+            for item in validatedEntries {
+                args.append(escapeArchiveGlob(item.cleanPath))
             }
             _ = try runProcess("/usr/bin/tar", arguments: args)
         }
 
         var movedResults: [URL] = []
         let fm = FileManager.default
-        for rawPath in entryPaths {
-            let clean = rawPath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-            let extractedAt = tempDir.appendingPathComponent(clean)
-            guard fm.fileExists(atPath: extractedAt.path) else { continue }
+        let canonicalTempPrefix = tempDir.resolvingSymlinksInPath().standardizedFileURL.path + "/"
+
+        for item in validatedEntries {
+            let extractedAt = tempDir.appendingPathComponent(item.cleanPath)
+            guard let attrs = try? fm.attributesOfItem(atPath: extractedAt.path) else { continue }
+
+            // Refuse symlinks or resolved paths escaping the temporary extraction sandbox
+            if (attrs[.type] as? FileAttributeType) == .typeSymbolicLink {
+                let resolvedTarget = extractedAt.resolvingSymlinksInPath().standardizedFileURL.path
+                guard resolvedTarget.hasPrefix(canonicalTempPrefix) else {
+                    throw ArchiveError.unsafeEntryPath(item.cleanPath)
+                }
+            } else {
+                let resolvedPath = extractedAt.resolvingSymlinksInPath().standardizedFileURL.path
+                guard resolvedPath.hasPrefix(canonicalTempPrefix) else {
+                    throw ArchiveError.unsafeEntryPath(item.cleanPath)
+                }
+            }
+
             let target = FileSystemService.uniqueDestinationURL(for: extractedAt, in: destinationDirectory)
             try fm.moveItem(at: extractedAt, to: target)
             movedResults.append(target)
@@ -198,29 +287,29 @@ enum ArchiveService {
 
     @discardableResult
     static func extractEntireArchive(_ archiveURL: URL, in parentDirectory: URL) throws -> URL {
-        let baseName: String = {
-            let name = archiveURL.lastPathComponent
-            if name.lowercased().hasSuffix(".tar.gz") {
-                return String(name.dropLast(7))
-            }
-            let ext = archiveURL.pathExtension
-            return ext.isEmpty ? "\(name)_utpakket" : String(name.dropLast(ext.count + 1))
-        }()
+        guard let kind = archiveKind(for: archiveURL) else {
+            throw ArchiveError.commandFailed("Ukjent arkivformat: \(archiveURL.lastPathComponent)")
+        }
 
+        let baseName = archiveBaseName(for: archiveURL)
         let targetFolder = FileSystemService.uniqueDestinationURL(
             for: parentDirectory.appendingPathComponent(baseName),
             in: parentDirectory
         )
         try FileManager.default.createDirectory(at: targetFolder, withIntermediateDirectories: true)
 
-        guard let kind = archiveKind(for: archiveURL) else { return targetFolder }
-        switch kind {
-        case .zip:
-            _ = try runProcess("/usr/bin/ditto", arguments: ["-x", "-k", archiveURL.path, targetFolder.path])
-        case .tar:
-            _ = try runProcess("/usr/bin/tar", arguments: ["-xf", archiveURL.path, "-C", targetFolder.path])
+        do {
+            switch kind {
+            case .zip:
+                _ = try runProcess("/usr/bin/ditto", arguments: ["-x", "-k", archiveURL.path, targetFolder.path])
+            case .tar:
+                _ = try runProcess("/usr/bin/tar", arguments: ["-xf", archiveURL.path, "-C", targetFolder.path])
+            }
+            return targetFolder
+        } catch {
+            try? FileManager.default.removeItem(at: targetFolder)
+            throw error
         }
-        return targetFolder
     }
 
     @discardableResult
@@ -235,16 +324,22 @@ enum ArchiveService {
             in: directory
         )
 
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
-        proc.currentDirectoryURL = directory
-        var args = ["-r", "-q", finalZipURL.path]
+        let sourceParent = urls[0].deletingLastPathComponent().standardizedFileURL
+        var args = ["-r", "-q", finalZipURL.path, "--"]
         for u in urls {
             args.append(u.lastPathComponent)
         }
-        proc.arguments = args
-        try proc.run()
-        proc.waitUntilExit()
+
+        do {
+            _ = try runProcess("/usr/bin/zip", arguments: args, currentDirectoryURL: sourceParent)
+        } catch {
+            try? FileManager.default.removeItem(at: finalZipURL)
+            throw ArchiveError.compressionFailed(error.localizedDescription)
+        }
+
+        guard FileManager.default.fileExists(atPath: finalZipURL.path) else {
+            throw ArchiveError.compressionFailed("")
+        }
         return finalZipURL
     }
 
@@ -259,6 +354,10 @@ enum ArchiveService {
 
     private static func readZipEntries(archiveURL: URL) throws -> [ArchiveRawEntry] {
         let out = try runProcess("/usr/bin/unzip", arguments: ["-Z", "-T", archiveURL.path])
+        return parseZipListing(out)
+    }
+
+    static func parseZipListing(_ out: String) -> [ArchiveRawEntry] {
         var entries: [ArchiveRawEntry] = []
 
         for line in out.split(whereSeparator: \.isNewline) {
@@ -288,6 +387,10 @@ enum ArchiveService {
 
     private static func readTarEntries(archiveURL: URL) throws -> [ArchiveRawEntry] {
         let out = try runProcess("/usr/bin/tar", arguments: ["-tvf", archiveURL.path])
+        return parseTarListing(out)
+    }
+
+    static func parseTarListing(_ out: String) -> [ArchiveRawEntry] {
         var entries: [ArchiveRawEntry] = []
 
         for line in out.split(whereSeparator: \.isNewline) {
@@ -314,10 +417,28 @@ enum ArchiveService {
         return entries
     }
 
-    private static func runProcess(_ launchPath: String, arguments: [String]) throws -> String {
+    static func decodeArchiveOutput(_ data: Data) -> String {
+        if let utf8 = String(data: data, encoding: .utf8) {
+            return utf8
+        }
+        if let latin1 = String(data: data, encoding: .isoLatin1) {
+            return latin1
+        }
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    private static func runProcess(
+        _ launchPath: String,
+        arguments: [String],
+        currentDirectoryURL: URL? = nil
+    ) throws -> String {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: launchPath)
         process.arguments = arguments
+        if let currentDirectoryURL {
+            process.currentDirectoryURL = currentDirectoryURL
+        }
+        process.standardInput = FileHandle.nullDevice
 
         let outPipe = Pipe()
         let errPipe = Pipe()
@@ -325,8 +446,34 @@ enum ArchiveService {
         process.standardError = errPipe
 
         try process.run()
-        let data = outPipe.fileHandleForReading.readDataToEndOfFile()
+
+        // Drain stdout and stderr concurrently to avoid pipe-buffer deadlocks on large output/errors
+        var outData = Data()
+        var errData = Data()
+        let drainGroup = DispatchGroup()
+
+        drainGroup.enter()
+        DispatchQueue.global(qos: .userInitiated).async {
+            outData = outPipe.fileHandleForReading.readDataToEndOfFile()
+            drainGroup.leave()
+        }
+
+        drainGroup.enter()
+        DispatchQueue.global(qos: .userInitiated).async {
+            errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+            drainGroup.leave()
+        }
+
         process.waitUntilExit()
-        return String(data: data, encoding: .utf8) ?? ""
+        drainGroup.wait()
+
+        if process.terminationStatus != 0 {
+            let errText = decodeArchiveOutput(errData)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let firstLine = errText.components(separatedBy: .newlines).first ?? ""
+            throw ArchiveError.commandFailed(firstLine)
+        }
+
+        return decodeArchiveOutput(outData)
     }
 }

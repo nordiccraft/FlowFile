@@ -2,6 +2,62 @@ import Darwin
 import Foundation
 import Observation
 
+/// Streaming UTF-8 decoder that buffers trailing incomplete multi-byte sequences across read() chunks.
+struct UTF8ChunkDecoder {
+    private(set) var pendingBytes = Data()
+
+    mutating func decode(_ incoming: Data) -> String {
+        guard !incoming.isEmpty else { return "" }
+        pendingBytes.append(incoming)
+
+        let trailingIncomplete = Self.incompleteTrailingByteCount(in: pendingBytes)
+        let validCount = pendingBytes.count - trailingIncomplete
+        guard validCount > 0 else {
+            return ""
+        }
+
+        let completeSlice = pendingBytes.prefix(validCount)
+        let text = String(decoding: completeSlice, as: UTF8.self)
+        pendingBytes = trailingIncomplete > 0 ? Data(pendingBytes.suffix(trailingIncomplete)) : Data()
+        return text
+    }
+
+    mutating func flushRemainder() -> String {
+        guard !pendingBytes.isEmpty else { return "" }
+        let text = String(decoding: pendingBytes, as: UTF8.self)
+        pendingBytes.removeAll()
+        return text
+    }
+
+    private static func incompleteTrailingByteCount(in data: Data) -> Int {
+        guard !data.isEmpty else { return 0 }
+        let maxInspect = min(3, data.count)
+        for offset in 1...maxInspect {
+            let idx = data.index(data.endIndex, offsetBy: -offset)
+            let byte = data[idx]
+            if (byte & 0b1100_0000) == 0b1000_0000 {
+                // Continuation byte 10xxxxxx: keep walking back to find its leading byte
+                continue
+            }
+            let expectedLength: Int
+            if (byte & 0b1000_0000) == 0 {
+                expectedLength = 1
+            } else if (byte & 0b1110_0000) == 0b1100_0000, byte >= 0xC2 {
+                expectedLength = 2
+            } else if (byte & 0b1111_0000) == 0b1110_0000 {
+                expectedLength = 3
+            } else if (byte & 0b1111_1000) == 0b1111_0000, byte <= 0xF4 {
+                expectedLength = 4
+            } else {
+                // Invalid leading byte; let UTF8.self replace it immediately instead of buffering forever
+                return 0
+            }
+            return offset < expectedLength ? offset : 0
+        }
+        return 0
+    }
+}
+
 @Observable
 final class TerminalSession {
     var outputText: String = ""
@@ -14,6 +70,7 @@ final class TerminalSession {
     private var masterFD: Int32 = -1
     private var shellProcess: Process?
     private var readSource: DispatchSourceRead?
+    private var utf8Decoder = UTF8ChunkDecoder()
 
     init(initialDirectory: URL) {
         self.currentDirectory = initialDirectory.standardizedFileURL
@@ -40,6 +97,7 @@ final class TerminalSession {
         }
 
         self.masterFD = master
+        self.utf8Decoder = UTF8ChunkDecoder()
         let flags = fcntl(master, F_GETFL)
         _ = fcntl(master, F_SETFL, flags | O_NONBLOCK)
 
@@ -69,12 +127,24 @@ final class TerminalSession {
         self.readSource = source
         source.resume()
 
+        proc.terminationHandler = { [weak self] terminatedProc in
+            DispatchQueue.main.async {
+                guard let self, self.shellProcess === terminatedProc else { return }
+                self.handleShellExit()
+            }
+        }
+
         do {
             try proc.run()
+            // Close parent's copy of slave FD so masterFD receives EOF promptly when child exits
+            try? slaveHandle.close()
             self.shellProcess = proc
             self.isRunning = true
             appendOutput("FlowFile Terminal startet i \(currentDirectory.path)\n\(shortPathPrompt())")
         } catch {
+            readSource?.cancel()
+            readSource = nil
+            masterFD = -1
             appendOutput("Feil ved oppstart av zsh: \(error.localizedDescription)\n")
         }
     }
@@ -126,24 +196,73 @@ final class TerminalSession {
     }
 
     func stop() {
-        if let proc = shellProcess, proc.isRunning {
+        let proc = shellProcess
+        shellProcess = nil
+        if let proc, proc.isRunning {
             proc.terminate()
         }
-        shellProcess = nil
         readSource?.cancel()
         readSource = nil
         masterFD = -1
         isRunning = false
     }
 
+    private func handleShellExit() {
+        drainRemainingBytes()
+        let flushed = utf8Decoder.flushRemainder()
+        if !flushed.isEmpty {
+            appendOutput(stripANSICodes(flushed).replacingOccurrences(of: "\r\n", with: "\n"))
+        }
+        let wasRunning = isRunning
+        shellProcess = nil
+        readSource?.cancel()
+        readSource = nil
+        masterFD = -1
+        isRunning = false
+        if wasRunning {
+            appendOutput("\n[Prosessen avsluttet]\n")
+        }
+    }
+
+    private func drainRemainingBytes() {
+        guard masterFD >= 0 else { return }
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        while true {
+            let count = Darwin.read(masterFD, &buffer, buffer.count)
+            if count > 0 {
+                let decoded = utf8Decoder.decode(Data(buffer[0..<count]))
+                if !decoded.isEmpty {
+                    let cleaned = stripANSICodes(decoded).replacingOccurrences(of: "\r\n", with: "\n")
+                    appendOutput(cleaned)
+                }
+            } else {
+                break
+            }
+        }
+    }
+
     private func readAvailableBytes() {
         guard masterFD >= 0 else { return }
         var buffer = [UInt8](repeating: 0, count: 4096)
-        let count = Darwin.read(masterFD, &buffer, buffer.count)
-        guard count > 0 else { return }
-        if let chunk = String(bytes: buffer[0..<count], encoding: .utf8) {
-            let cleaned = stripANSICodes(chunk).replacingOccurrences(of: "\r\n", with: "\n")
-            appendOutput(cleaned)
+        while true {
+            let count = Darwin.read(masterFD, &buffer, buffer.count)
+            if count > 0 {
+                let decoded = utf8Decoder.decode(Data(buffer[0..<count]))
+                if !decoded.isEmpty {
+                    let cleaned = stripANSICodes(decoded).replacingOccurrences(of: "\r\n", with: "\n")
+                    appendOutput(cleaned)
+                }
+            } else if count == 0 {
+                handleShellExit()
+                return
+            } else {
+                let err = errno
+                if err == EAGAIN || err == EWOULDBLOCK || err == EINTR {
+                    return
+                }
+                handleShellExit()
+                return
+            }
         }
     }
 

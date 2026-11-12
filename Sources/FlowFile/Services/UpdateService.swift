@@ -168,10 +168,19 @@ final class UpdateService: NSObject, URLSessionDownloadDelegate {
             let zipTarget = stagingDir.appendingPathComponent(zipFilename)
             try FileManager.default.moveItem(at: downloadedTempURL, to: zipTarget)
 
-            // Verify SHA-256 checksum if SHA256SUMS.txt is published on the release
-            if let checksumsURL = release.checksumsURL, checksumsURL.scheme?.lowercased() == "https" {
-                try await Self.verifySHA256Checksum(of: zipTarget, filename: zipFilename, checksumsURL: checksumsURL)
+            // Require SHA256SUMS.txt over HTTPS (fail closed if missing, unreadable, or mismatched)
+            guard let checksumsURL = release.checksumsURL,
+                  checksumsURL.scheme?.lowercased() == "https" else {
+                throw NSError(
+                    domain: "UpdateService",
+                    code: 10,
+                    userInfo: [NSLocalizedDescriptionKey: tr(
+                        "Utgivelsen mangler gyldig SHA256SUMS.txt over HTTPS. Oppdateringen ble avbrutt.",
+                        "Release is missing a valid HTTPS SHA256SUMS.txt manifest. Update aborted."
+                    )]
+                )
             }
+            try await Self.verifySHA256Checksum(of: zipTarget, filename: zipFilename, checksumsURL: checksumsURL)
 
             let extractDir = stagingDir.appendingPathComponent("extracted", isDirectory: true)
             try FileManager.default.createDirectory(at: extractDir, withIntermediateDirectories: true)
@@ -194,6 +203,7 @@ final class UpdateService: NSObject, URLSessionDownloadDelegate {
             try Self.verifyBundleIdentityAndSignature(at: extractedApp)
 
             let destinationAppURL = Self.resolveTargetAppLocation()
+            try Self.preflightValidateTargetLocation(destinationAppURL)
             try Self.spawnAtomicUpdaterAndTerminate(
                 newAppURL: extractedApp,
                 destinationAppURL: destinationAppURL,
@@ -352,8 +362,27 @@ final class UpdateService: NSObject, URLSessionDownloadDelegate {
     }
 
     private static func verifySHA256Checksum(of fileURL: URL, filename: String, checksumsURL: URL) async throws {
-        let (checksumData, _) = try await URLSession.shared.data(from: checksumsURL)
-        guard let text = String(data: checksumData, encoding: .utf8) else { return }
+        let (checksumData, response) = try await URLSession.shared.data(from: checksumsURL)
+        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+            throw NSError(domain: "UpdateService", code: http.statusCode, userInfo: [
+                NSLocalizedDescriptionKey: tr(
+                    "Kunne ikke hente SHA256SUMS.txt (HTTP \(http.statusCode)). Oppdateringen ble avbrutt.",
+                    "Could not fetch SHA256SUMS.txt (HTTP \(http.statusCode)). Update aborted."
+                )
+            ])
+        }
+        try verifySHA256Checksum(of: fileURL, filename: filename, manifestData: checksumData)
+    }
+
+    static func verifySHA256Checksum(of fileURL: URL, filename: String, manifestData: Data) throws {
+        guard let text = String(data: manifestData, encoding: .utf8) else {
+            throw NSError(domain: "UpdateService", code: 11, userInfo: [
+                NSLocalizedDescriptionKey: tr(
+                    "SHA256SUMS.txt har ugyldig tegnkoding. Oppdateringen ble avbrutt.",
+                    "SHA256SUMS.txt is not valid UTF-8. Update aborted."
+                )
+            ])
+        }
 
         var expectedHex: String? = nil
         for line in text.components(separatedBy: .newlines) {
@@ -367,7 +396,17 @@ final class UpdateService: NSObject, URLSessionDownloadDelegate {
             }
         }
 
-        guard let expected = expectedHex else { return }
+        guard let expected = expectedHex,
+              expected.count == 64,
+              expected.allSatisfy(\.isHexDigit) else {
+            throw NSError(domain: "UpdateService", code: 12, userInfo: [
+                NSLocalizedDescriptionKey: tr(
+                    "Fant ingen gyldig SHA-256-oppføring for \(filename) i SHA256SUMS.txt.",
+                    "No valid SHA-256 entry found for \(filename) in SHA256SUMS.txt."
+                )
+            ])
+        }
+
         let archiveData = try Data(contentsOf: fileURL, options: .mappedIfSafe)
         let digest = SHA256.hash(data: archiveData)
         let actualHex = digest.map { String(format: "%02x", $0) }.joined()
@@ -422,6 +461,81 @@ final class UpdateService: NSObject, URLSessionDownloadDelegate {
                 )
             ])
         }
+
+        // If the currently running bundle is signed with an Apple Developer TeamIdentifier,
+        // enforce that the incoming bundle is signed by the exact same TeamIdentifier.
+        let runningURL = Bundle.main.bundleURL.standardizedFileURL
+        if runningURL.pathExtension == "app",
+           let currentTeam = extractTeamIdentifier(for: runningURL) {
+            let incomingTeam = extractTeamIdentifier(for: appURL)
+            if incomingTeam != currentTeam {
+                throw NSError(domain: "UpdateService", code: 13, userInfo: [
+                    NSLocalizedDescriptionKey: tr(
+                        "Utgiversertifikat (Team ID) på oppdateringen stemmer ikke med installert app.",
+                        "Update TeamIdentifier does not match the installed application."
+                    )
+                ])
+            }
+        }
+    }
+
+    private static func extractTeamIdentifier(for appURL: URL) -> String? {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+        proc.arguments = ["-dv", "--verbose=2", appURL.path]
+        let errPipe = Pipe()
+        proc.standardOutput = FileHandle.nullDevice
+        proc.standardError = errPipe
+        do {
+            try proc.run()
+            let data = errPipe.fileHandleForReading.readDataToEndOfFile()
+            proc.waitUntilExit()
+            guard proc.terminationStatus == 0,
+                  let text = String(data: data, encoding: .utf8) else {
+                return nil
+            }
+            for line in text.components(separatedBy: .newlines) where line.hasPrefix("TeamIdentifier=") {
+                let value = String(line.dropFirst("TeamIdentifier=".count)).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !value.isEmpty && value != "not set" {
+                    return value
+                }
+            }
+            return nil
+        } catch {
+            return nil
+        }
+    }
+
+    static func preflightValidateTargetLocation(_ destinationAppURL: URL) throws {
+        let path = destinationAppURL.path
+        if path.contains("/AppTranslocation/") {
+            throw NSError(domain: "UpdateService", code: 14, userInfo: [
+                NSLocalizedDescriptionKey: tr(
+                    "FlowFile kjører fra en skrivebeskyttet karantene-sti (App Translocation). Flytt FlowFile.app til /Applications før du oppdaterer.",
+                    "FlowFile is running from a read-only App Translocation path. Move FlowFile.app to /Applications before updating."
+                )
+            ])
+        }
+
+        let fm = FileManager.default
+        let parentDir = destinationAppURL.deletingLastPathComponent()
+        guard fm.isWritableFile(atPath: parentDir.path) else {
+            throw NSError(domain: "UpdateService", code: 15, userInfo: [
+                NSLocalizedDescriptionKey: tr(
+                    "Mappen «\(parentDir.path)» er skrivebeskyttet (f.eks. et åpent diskbilde). Kopier FlowFile.app til /Applications først.",
+                    "Folder '\(parentDir.path)' is not writable (e.g. a mounted disk image). Copy FlowFile.app to /Applications first."
+                )
+            ])
+        }
+
+        if fm.fileExists(atPath: path) && !fm.isWritableFile(atPath: path) {
+            throw NSError(domain: "UpdateService", code: 16, userInfo: [
+                NSLocalizedDescriptionKey: tr(
+                    "Har ikke skriverettigheter til å oppdatere «\(path)».",
+                    "Insufficient write permissions to update '\(path)'."
+                )
+            ])
+        }
     }
 
     private static func resolveTargetAppLocation() -> URL {
@@ -442,23 +556,57 @@ final class UpdateService: NSObject, URLSessionDownloadDelegate {
 
         let scriptContent = """
         #!/bin/zsh
-        PID=\(pid)
-        NEW_APP="\(newAppURL.path)"
-        DEST_APP="\(destinationAppURL.path)"
-        STAGE_DIR="\(stagingDir.path)"
+        set -u
+        LOG_FILE="/tmp/flowfile-update.log"
+        exec >>"$LOG_FILE" 2>&1
+        echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Starting FlowFile atomic update for PID $FF_PID"
 
-        for i in {1..40}; do
-            if ! kill -0 "$PID" 2>/dev/null; then
+        for i in {1..50}; do
+            if ! kill -0 "$FF_PID" 2>/dev/null; then
                 break
             fi
             sleep 0.2
         done
 
-        if rm -rf "$DEST_APP" 2>/dev/null; then
-            /usr/bin/ditto "$NEW_APP" "$DEST_APP"
-            open "$DEST_APP"
+        if kill -0 "$FF_PID" 2>/dev/null; then
+            echo "ERROR: Old FlowFile process $FF_PID did not terminate in time; aborting update."
+            rm -rf "$FF_STAGE_DIR" 2>/dev/null || true
+            exit 1
         fi
-        rm -rf "$STAGE_DIR" 2>/dev/null || true
+
+        NEW_STAGE="${FF_DEST_APP}.new_$$"
+        BACKUP_APP="${FF_DEST_APP}.backup_$$"
+        rm -rf "$NEW_STAGE" "$BACKUP_APP" 2>/dev/null || true
+
+        if ! /usr/bin/ditto "$FF_NEW_APP" "$NEW_STAGE"; then
+            echo "ERROR: Failed to stage new app bundle to $NEW_STAGE"
+            rm -rf "$NEW_STAGE" "$FF_STAGE_DIR" 2>/dev/null || true
+            open "$FF_DEST_APP" || true
+            exit 1
+        fi
+
+        if [[ -e "$FF_DEST_APP" ]]; then
+            if ! mv "$FF_DEST_APP" "$BACKUP_APP"; then
+                echo "ERROR: Failed to move existing app to backup $BACKUP_APP"
+                rm -rf "$NEW_STAGE" "$FF_STAGE_DIR" 2>/dev/null || true
+                open "$FF_DEST_APP" || true
+                exit 1
+            fi
+        fi
+
+        if mv "$NEW_STAGE" "$FF_DEST_APP"; then
+            rm -rf "$BACKUP_APP" "$FF_STAGE_DIR" 2>/dev/null || true
+            echo "Update succeeded; relaunching $FF_DEST_APP"
+            open "$FF_DEST_APP"
+        else
+            echo "ERROR: Failed to move $NEW_STAGE into $FF_DEST_APP; restoring backup"
+            if [[ -e "$BACKUP_APP" ]]; then
+                mv "$BACKUP_APP" "$FF_DEST_APP" 2>/dev/null || true
+            fi
+            rm -rf "$NEW_STAGE" "$FF_STAGE_DIR" 2>/dev/null || true
+            open "$FF_DEST_APP" || true
+            exit 1
+        fi
         """
 
         try scriptContent.write(to: scriptURL, atomically: true, encoding: .utf8)
@@ -467,6 +615,12 @@ final class UpdateService: NSObject, URLSessionDownloadDelegate {
         let launcher = Process()
         launcher.executableURL = URL(fileURLWithPath: "/bin/zsh")
         launcher.arguments = [scriptURL.path]
+        var env = ProcessInfo.processInfo.environment
+        env["FF_PID"] = String(pid)
+        env["FF_NEW_APP"] = newAppURL.path
+        env["FF_DEST_APP"] = destinationAppURL.path
+        env["FF_STAGE_DIR"] = stagingDir.path
+        launcher.environment = env
         launcher.standardOutput = FileHandle.nullDevice
         launcher.standardError = FileHandle.nullDevice
         try launcher.run()

@@ -85,6 +85,19 @@ struct FileGridView: View {
         .onTapGesture {
             workspace.activePaneID = pane.id
         }
+        .dropDestination(for: URL.self) { urls, _ in
+            guard !tab.isInsideArchive, workspace.guardNotInTourSandbox() else { return false }
+            let fileURLs = urls.filter(\.isFileURL)
+            guard !fileURLs.isEmpty else { return false }
+            let targetDir = tab.currentURL
+            let op = FileSystemService.preferredDragOperation(
+                for: fileURLs,
+                to: targetDir,
+                modifierFlags: NSEvent.modifierFlags
+            )
+            workspace.transferQueue.enqueue(operation: op, urls: fileURLs, to: targetDir)
+            return true
+        }
     }
 }
 

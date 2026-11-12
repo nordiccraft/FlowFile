@@ -188,8 +188,8 @@ struct UpdateSheetView: View {
                 }
                 ProgressView(value: progress)
                 Text(workspace.tr(
-                    "Verifiserer SHA-256-sjekksum og kodesignatur før oppdatering.",
-                    "Verifying SHA-256 checksum and code signature before updating."
+                    "Kontrollerer SHA-256-sjekksum over HTTPS og pakkestruktur før atomisk oppdatering.",
+                    "Checking HTTPS SHA-256 checksum and bundle integrity before atomic update."
                 ))
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)

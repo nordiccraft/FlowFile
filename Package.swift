@@ -23,6 +23,11 @@ let package = Package(
                 .linkedFramework("CoreImage"),
                 .linkedFramework("ImageIO")
             ]
+        ),
+        .testTarget(
+            name: "FlowFileTests",
+            dependencies: ["FlowFile"],
+            path: "Tests/FlowFileTests"
         )
     ],
     swiftLanguageModes: [.v5]

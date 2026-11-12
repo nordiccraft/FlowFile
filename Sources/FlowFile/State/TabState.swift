@@ -18,22 +18,38 @@ final class TabState: Identifiable {
     var gitBadges: [URL: GitFileBadge] = [:]
 
     // Dual-Pane Folder Comparison state (Fase 2)
-    var diffStatuses: [URL: FileDiffStatus] = [:]
-    var hideIdenticalInDiff: Bool = false
+    var diffStatuses: [URL: FileDiffStatus] = [:] {
+        didSet { cachedDisplayedItems = nil }
+    }
+    var hideIdenticalInDiff: Bool = false {
+        didSet { cachedDisplayedItems = nil }
+    }
 
-    var allItems: [FileItem] = []
-    var filterQuery: String = ""
+    var allItems: [FileItem] = [] {
+        didSet { cachedDisplayedItems = nil }
+    }
+    var filterQuery: String = "" {
+        didSet { cachedDisplayedItems = nil }
+    }
     var isFilterBarVisible: Bool = false
 
-    var sortColumn: SortColumn = .name
-    var sortAscending: Bool = true
+    var sortColumn: SortColumn = .name {
+        didSet { cachedDisplayedItems = nil }
+    }
+    var sortAscending: Bool = true {
+        didSet { cachedDisplayedItems = nil }
+    }
     var viewMode: PaneViewMode = .details
 
     var selectedURLs: Set<URL> = []
     var markedURLs: Set<URL> = []
-    var calculatedFolderSizes: [URL: Int64] = [:]
+    var calculatedFolderSizes: [URL: Int64] = [:] {
+        didSet { cachedDisplayedItems = nil }
+    }
     var errorMessage: String? = nil
 
+    private(set) var currentShowHidden: Bool
+    @ObservationIgnored private var cachedDisplayedItems: [FileItem]? = nil
     private var watcher: DirectoryWatcher?
     private var gitRefreshGeneration: Int = 0
 
@@ -69,6 +85,20 @@ final class TabState: Identifiable {
     var canGoUp: Bool { isInsideArchive || currentURL.path != "/" }
 
     var displayedItems: [FileItem] {
+        // Touch tracked @Observable properties in O(1) so SwiftUI observation remains subscribed on cache hits
+        _ = (
+            allItems.count,
+            filterQuery,
+            sortColumn,
+            sortAscending,
+            hideIdenticalInDiff,
+            diffStatuses.count,
+            calculatedFolderSizes.count
+        )
+        if let cached = cachedDisplayedItems {
+            return cached
+        }
+
         var candidates = allItems
 
         if hideIdenticalInDiff && !diffStatuses.isEmpty {
@@ -82,12 +112,14 @@ final class TabState: Identifiable {
             }
         }
 
-        return FileSystemService.sortItems(
+        let sorted = FileSystemService.sortItems(
             candidates,
             by: sortColumn,
             ascending: sortAscending,
             folderSizes: calculatedFolderSizes
         )
+        cachedDisplayedItems = sorted
+        return sorted
     }
 
     var effectiveActionItems: [FileItem] {
@@ -111,8 +143,9 @@ final class TabState: Identifiable {
 
     init(initialURL: URL, showHidden: Bool) {
         self.currentURL = initialURL.standardizedFileURL
+        self.currentShowHidden = showHidden
         reload(showHidden: showHidden, selectFirstIfEmpty: true)
-        setupWatcher(showHidden: showHidden)
+        setupWatcher()
     }
 
     // MARK: - Archive Virtual Folder Navigation
@@ -145,7 +178,7 @@ final class TabState: Identifiable {
         isFilterBarVisible = false
         markedURLs.removeAll()
         reload(showHidden: showHidden, preferredSelection: archURL, selectFirstIfEmpty: true)
-        setupWatcher(showHidden: showHidden)
+        setupWatcher()
     }
 
     // MARK: - Standard Directory Navigation
@@ -158,15 +191,17 @@ final class TabState: Identifiable {
     ) {
         let standardized = CloudStorageService.resolvePossibleShortcut(at: targetURL) ?? targetURL.standardizedFileURL
 
-        if ArchiveService.isSupportedArchive(standardized) {
+        var isDir: ObjCBool = false
+        let exists = FileManager.default.fileExists(atPath: standardized.path, isDirectory: &isDir)
+
+        // Check directory status BEFORE archive suffix so folders named e.g. `project.tar` or `backup.zip` open as folders!
+        if exists && !isDir.boolValue && ArchiveService.isSupportedArchive(standardized) {
             currentURL = standardized.deletingLastPathComponent()
             enterArchive(standardized, showHidden: showHidden)
             return
         }
 
-        var isDir: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: standardized.path, isDirectory: &isDir),
-              isDir.boolValue else {
+        guard exists && isDir.boolValue else {
             NSWorkspace.shared.open(standardized)
             return
         }
@@ -187,7 +222,7 @@ final class TabState: Identifiable {
         errorMessage = nil
 
         reload(showHidden: showHidden, preferredSelection: childToSelect, selectFirstIfEmpty: true)
-        setupWatcher(showHidden: showHidden)
+        setupWatcher()
     }
 
     func goBack(showHidden: Bool) {
@@ -204,7 +239,7 @@ final class TabState: Identifiable {
         markedURLs.removeAll()
         clearDiff()
         reload(showHidden: showHidden, preferredSelection: leaving, selectFirstIfEmpty: true)
-        setupWatcher(showHidden: showHidden)
+        setupWatcher()
     }
 
     func goForward(showHidden: Bool) {
@@ -218,7 +253,7 @@ final class TabState: Identifiable {
         markedURLs.removeAll()
         clearDiff()
         reload(showHidden: showHidden, selectFirstIfEmpty: true)
-        setupWatcher(showHidden: showHidden)
+        setupWatcher()
     }
 
     func goUp(showHidden: Bool) {
@@ -244,6 +279,7 @@ final class TabState: Identifiable {
         preferredSelection: URL? = nil,
         selectFirstIfEmpty: Bool = false
     ) {
+        currentShowHidden = showHidden
         do {
             let loaded: [FileItem]
             if let archiveURL = archiveFileURL {
@@ -346,13 +382,13 @@ final class TabState: Identifiable {
         }
     }
 
-    private func setupWatcher(showHidden: Bool) {
+    private func setupWatcher() {
         watcher?.stop()
         guard !isInsideArchive else { return }
         let watchedURL = currentURL
         watcher = DirectoryWatcher(url: watchedURL) { [weak self] in
             guard let self, !self.isInsideArchive, self.currentURL == watchedURL else { return }
-            self.reload(showHidden: showHidden)
+            self.reload(showHidden: self.currentShowHidden)
         }
     }
 

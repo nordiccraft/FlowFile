@@ -81,7 +81,7 @@ enum MultiRenameService {
             let expandedStem = expandMask(
                 config.nameMask,
                 stem: item.stemName,
-                ext: item.fileExtension,
+                ext: item.rawFileExtension,
                 counter: counterStr,
                 date: dateStr,
                 time: timeStr,
@@ -91,7 +91,7 @@ enum MultiRenameService {
             let expandedExt = expandMask(
                 config.extensionMask,
                 stem: item.stemName,
-                ext: item.fileExtension,
+                ext: item.rawFileExtension,
                 counter: counterStr,
                 date: dateStr,
                 time: timeStr,
@@ -168,8 +168,12 @@ enum MultiRenameService {
             }
             if rows[i].status == .ready {
                 let targetURL = directory.appendingPathComponent(proposed).standardizedFileURL
-                if FileManager.default.fileExists(atPath: targetURL.path) && !selectedSourceSet.contains(targetURL) {
-                    rows[i].status = .existsOnDisk
+                if FileManager.default.fileExists(atPath: targetURL.path) {
+                    let isSelectedItem = selectedSourceSet.contains(targetURL)
+                        || items.contains(where: { FileSystemService.referToSameFile($0.url, targetURL) })
+                    if !isSelectedItem {
+                        rows[i].status = .existsOnDisk
+                    }
                 }
             }
         }
@@ -177,9 +181,11 @@ enum MultiRenameService {
         return rows
     }
 
-    /// Executes a safe two-phase rename via temporary filenames so swapping/re-numbering (e.g. 001 -> 002) never collides!
-    static func executeBatchRename(rows: [RenamePreviewRow]) throws -> RenameUndoRecord {
-        let fm = FileManager.default
+    /// Executes a safe two-phase rename via temporary filenames with full transactional rollback on failure.
+    static func executeBatchRename(
+        rows: [RenamePreviewRow],
+        moveItem: (URL, URL) throws -> Void = { try FileManager.default.moveItem(at: $0, to: $1) }
+    ) throws -> RenameUndoRecord {
         let actionable = rows.filter { $0.status == .ready }
         guard !actionable.isEmpty else {
             return RenameUndoRecord(pairs: [], timestamp: Date())
@@ -194,38 +200,82 @@ enum MultiRenameService {
         let batchToken = UUID().uuidString.prefix(8)
 
         // Phase 1: Move to temporary names
-        for (idx, row) in actionable.enumerated() {
-            let dir = row.sourceItem.url.deletingLastPathComponent()
-            let tempURL = dir.appendingPathComponent(".flowfile_renametmp_\(batchToken)_\(idx)")
-            let finalURL = dir.appendingPathComponent(row.proposedName)
-            try fm.moveItem(at: row.sourceItem.url, to: tempURL)
-            staged.append((tempURL: tempURL, finalURL: finalURL, originalURL: row.sourceItem.url))
+        do {
+            for (idx, row) in actionable.enumerated() {
+                let dir = row.sourceItem.url.deletingLastPathComponent()
+                let tempURL = dir.appendingPathComponent(".flowfile_renametmp_\(batchToken)_\(idx)")
+                let finalURL = dir.appendingPathComponent(row.proposedName)
+                try moveItem(row.sourceItem.url, tempURL)
+                staged.append((tempURL: tempURL, finalURL: finalURL, originalURL: row.sourceItem.url))
+            }
+        } catch {
+            for entry in staged.reversed() {
+                try? FileManager.default.moveItem(at: entry.tempURL, to: entry.originalURL)
+            }
+            throw error
         }
 
         // Phase 2: Move from temporary names to final names
-        var completedPairs: [(renamedURL: URL, originalURL: URL)] = []
-        for entry in staged {
-            try fm.moveItem(at: entry.tempURL, to: entry.finalURL)
-            completedPairs.append((renamedURL: entry.finalURL, originalURL: entry.originalURL))
+        var completedStageIndices: [Int] = []
+        do {
+            for (idx, entry) in staged.enumerated() {
+                try moveItem(entry.tempURL, entry.finalURL)
+                completedStageIndices.append(idx)
+            }
+        } catch {
+            // First revert any Phase 2 moves back to their temporary URLs so swapped names never collide during rollback
+            for idx in completedStageIndices.reversed() {
+                let entry = staged[idx]
+                try? FileManager.default.moveItem(at: entry.finalURL, to: entry.tempURL)
+            }
+            // Then revert all temporary URLs back to their exact original URLs
+            for entry in staged.reversed() {
+                try? FileManager.default.moveItem(at: entry.tempURL, to: entry.originalURL)
+            }
+            throw error
         }
 
+        let completedPairs = staged.map { (renamedURL: $0.finalURL, originalURL: $0.originalURL) }
         return RenameUndoRecord(pairs: completedPairs, timestamp: Date())
     }
 
-    static func undoBatchRename(_ record: RenameUndoRecord) throws {
+    static func undoBatchRename(
+        _ record: RenameUndoRecord,
+        moveItem: (URL, URL) throws -> Void = { try FileManager.default.moveItem(at: $0, to: $1) }
+    ) throws {
         let fm = FileManager.default
         let batchToken = UUID().uuidString.prefix(8)
-        var staged: [(tempURL: URL, originalURL: URL)] = []
+        var staged: [(tempURL: URL, originalURL: URL, renamedURL: URL)] = []
 
-        for (idx, pair) in record.pairs.enumerated() where fm.fileExists(atPath: pair.renamedURL.path) {
-            let dir = pair.renamedURL.deletingLastPathComponent()
-            let tempURL = dir.appendingPathComponent(".flowfile_undotmp_\(batchToken)_\(idx)")
-            try fm.moveItem(at: pair.renamedURL, to: tempURL)
-            staged.append((tempURL: tempURL, originalURL: pair.originalURL))
+        do {
+            for (idx, pair) in record.pairs.enumerated() where fm.fileExists(atPath: pair.renamedURL.path) {
+                let dir = pair.renamedURL.deletingLastPathComponent()
+                let tempURL = dir.appendingPathComponent(".flowfile_undotmp_\(batchToken)_\(idx)")
+                try moveItem(pair.renamedURL, tempURL)
+                staged.append((tempURL: tempURL, originalURL: pair.originalURL, renamedURL: pair.renamedURL))
+            }
+        } catch {
+            for entry in staged.reversed() {
+                try? fm.moveItem(at: entry.tempURL, to: entry.renamedURL)
+            }
+            throw error
         }
 
-        for entry in staged {
-            try fm.moveItem(at: entry.tempURL, to: entry.originalURL)
+        var restoredIndices: [Int] = []
+        do {
+            for (idx, entry) in staged.enumerated() {
+                try moveItem(entry.tempURL, entry.originalURL)
+                restoredIndices.append(idx)
+            }
+        } catch {
+            for idx in restoredIndices.reversed() {
+                let entry = staged[idx]
+                try? fm.moveItem(at: entry.originalURL, to: entry.tempURL)
+            }
+            for entry in staged.reversed() {
+                try? fm.moveItem(at: entry.tempURL, to: entry.renamedURL)
+            }
+            throw error
         }
     }
 
@@ -285,7 +335,14 @@ enum MultiRenameService {
                 extPart = ""
             } else {
                 stem = String(name.dropLast(ext.count + 1))
-                extPart = "." + ext.lowercased()
+                switch transform {
+                case .lowercase:
+                    extPart = "." + ext.lowercased()
+                case .uppercase:
+                    extPart = "." + ext.uppercased()
+                default:
+                    extPart = "." + ext
+                }
             }
         }
 

@@ -17,22 +17,68 @@ struct GitRepoSnapshot {
 }
 
 enum GitStatusService {
+    private static let cacheLock = NSLock()
+    private static var cachedSnapshots: [URL: (timestamp: Date, snapshot: GitRepoSnapshot)] = [:]
+    private static let cacheTTLSeconds: TimeInterval = 1.5
+
     static func inspectDirectory(_ directoryURL: URL) async -> GitRepoSnapshot? {
         await Task.detached(priority: .utility) {
             inspectSync(directoryURL)
         }.value
     }
 
-    private static func inspectSync(_ directoryURL: URL) -> GitRepoSnapshot? {
-        guard FileManager.default.fileExists(atPath: "/usr/bin/git") else { return nil }
+    /// Walks parent directories purely via FileManager so non-Git folders spawn zero subprocesses.
+    static func findGitRepoRoot(from directoryURL: URL) -> URL? {
+        let fm = FileManager.default
+        var current = directoryURL.standardizedFileURL
+        while true {
+            let dotGit = current.appendingPathComponent(".git")
+            if fm.fileExists(atPath: dotGit.path) {
+                return current
+            }
+            let parent = current.deletingLastPathComponent().standardizedFileURL
+            if parent.path == current.path {
+                return nil
+            }
+            current = parent
+        }
+    }
 
-        guard let topOut = runGit(in: directoryURL, args: ["rev-parse", "--show-toplevel"]),
-              !topOut.isEmpty else {
+    /// Resolves a real installed Git binary without ever invoking the `/usr/bin/git` shim when CLT is absent.
+    private static func resolveRealGitExecutable() -> URL? {
+        let candidates = [
+            "/Library/Developer/CommandLineTools/usr/bin/git",
+            "/Applications/Xcode.app/Contents/Developer/usr/bin/git",
+            "/opt/homebrew/bin/git",
+            "/usr/local/bin/git"
+        ]
+        let fm = FileManager.default
+        for path in candidates where fm.isExecutableFile(atPath: path) {
+            return URL(fileURLWithPath: path)
+        }
+        return nil
+    }
+
+    private static func inspectSync(_ directoryURL: URL) -> GitRepoSnapshot? {
+        guard let repoRoot = findGitRepoRoot(from: directoryURL),
+              let gitExecutable = resolveRealGitExecutable() else {
             return nil
         }
-        let repoRoot = URL(fileURLWithPath: topOut.trimmingCharacters(in: .whitespacesAndNewlines)).standardizedFileURL
 
-        guard let porcelain = runGit(in: repoRoot, args: ["status", "--porcelain=v1", "-b", "--ignored=matching"]) else {
+        let now = Date()
+        cacheLock.lock()
+        if let cached = cachedSnapshots[repoRoot],
+           now.timeIntervalSince(cached.timestamp) < cacheTTLSeconds {
+            cacheLock.unlock()
+            return cached.snapshot
+        }
+        cacheLock.unlock()
+
+        guard let porcelain = runGit(
+            executable: gitExecutable,
+            in: repoRoot,
+            args: ["--no-optional-locks", "status", "--porcelain=v1", "-b", "--ignored=matching"]
+        ) else {
             return nil
         }
 
@@ -81,12 +127,16 @@ enum GitStatusService {
             }
         }
 
-        return GitRepoSnapshot(
+        let snapshot = GitRepoSnapshot(
             repoRoot: repoRoot,
             branchName: branch,
             badgesByURL: badges,
             changedCount: changedCount
         )
+        cacheLock.lock()
+        cachedSnapshots[repoRoot] = (timestamp: Date(), snapshot: snapshot)
+        cacheLock.unlock()
+        return snapshot
     }
 
     private static func classifyPorcelain(_ xy: String) -> GitFileBadge {
@@ -113,11 +163,12 @@ enum GitStatusService {
         return rank(incoming) > rank(existing) ? incoming : existing
     }
 
-    private static func runGit(in directory: URL, args: [String]) -> String? {
+    private static func runGit(executable: URL, in directory: URL, args: [String]) -> String? {
         let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        proc.executableURL = executable
         proc.currentDirectoryURL = directory
         proc.arguments = args
+        proc.standardInput = FileHandle.nullDevice
 
         let outPipe = Pipe()
         proc.standardOutput = outPipe

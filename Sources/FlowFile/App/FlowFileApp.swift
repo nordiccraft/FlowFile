@@ -6,6 +6,11 @@ final class FlowFileAppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
+        ShareHubService.cleanupStaleStagingDirectories()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        ShareHubService.cleanupStaleStagingDirectories(maxAgeSeconds: 0)
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -75,20 +80,41 @@ struct FlowFileApp: App {
             }
 
             CommandGroup(replacing: .pasteboard) {
-                Button("Klipp ut filer") {
-                    workspace.cutSelected()
+                Button(workspace.tr("Klipp ut", "Cut")) {
+                    if Self.isTextInputActive {
+                        NSApp.sendAction(#selector(NSText.cut(_:)), to: nil, from: nil)
+                    } else {
+                        workspace.cutSelected()
+                    }
                 }
                 .keyboardShortcut("x", modifiers: [.command])
 
-                Button("Kopier filer") {
-                    workspace.copySelected()
+                Button(workspace.tr("Kopier", "Copy")) {
+                    if Self.isTextInputActive {
+                        NSApp.sendAction(#selector(NSText.copy(_:)), to: nil, from: nil)
+                    } else {
+                        workspace.copySelected()
+                    }
                 }
                 .keyboardShortcut("c", modifiers: [.command])
 
-                Button("Lim inn filer") {
-                    workspace.pasteIntoActiveFolder()
+                Button(workspace.tr("Lim inn", "Paste")) {
+                    if Self.isTextInputActive {
+                        NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: nil)
+                    } else {
+                        workspace.pasteIntoActiveFolder()
+                    }
                 }
                 .keyboardShortcut("v", modifiers: [.command])
+
+                Button(workspace.tr("Merk alt", "Select All")) {
+                    if Self.isTextInputActive {
+                        NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil)
+                    } else {
+                        workspace.selectAllInActiveTab()
+                    }
+                }
+                .keyboardShortcut("a", modifiers: [.command])
 
                 Divider()
 
@@ -305,5 +331,11 @@ struct FlowFileApp: App {
                 }
             }
         }
+    }
+
+    /// True whenever keyboard focus is inside a text field / field editor (address bar, rename sheet, filter bar, etc.)
+    private static var isTextInputActive: Bool {
+        guard let responder = NSApp.keyWindow?.firstResponder else { return false }
+        return responder is NSText || responder is NSTextField
     }
 }

@@ -7,22 +7,17 @@ import UniformTypeIdentifiers
 struct SharePreparationOptions {
     var packageAsCleanZip: Bool = false
     var archiveBaseName: String = "Delte-filer"
-    var usePassword: Bool = false
-    var password: String = ""
     var convertHeicAndStripGPS: Bool = false
 }
 
 enum ShareHubError: LocalizedError {
     case emptySelection
-    case missingPassword
     case zipCreationFailed
 
     var errorDescription: String? {
         switch self {
         case .emptySelection:
             return "Ingen filer er valgt for deling."
-        case .missingPassword:
-            return "Skriv inn et passord for den krypterte ZIP-filen, eller slå av passordbeskyttelse."
         case .zipCreationFailed:
             return "Kunne ikke opprette komprimert delingsfil."
         }
@@ -30,6 +25,8 @@ enum ShareHubError: LocalizedError {
 }
 
 enum ShareHubService {
+    private static let stagingPrefix = "FlowFileShare_"
+
     static func containsImages(_ items: [FileItem]) -> Bool {
         let imageExts: Set<String> = ["heic", "heif", "jpg", "jpeg", "png", "tiff", "tif", "webp"]
         return items.contains { imageExts.contains($0.fileExtension.lowercased()) }
@@ -42,7 +39,6 @@ enum ShareHubService {
 
     static func requiresZipForSingleFileTransport(_ items: [FileItem], options: SharePreparationOptions) -> Bool {
         options.packageAsCleanZip
-            || options.usePassword
             || items.count > 1
             || items.contains(where: \.isNavigableFolder)
     }
@@ -59,37 +55,78 @@ enum ShareHubService {
         return appURL.deletingPathExtension().lastPathComponent
     }
 
-    /// Prepares files according to user's smart options (HEIC->JPG, strip GPS/EXIF, Windows-clean ZIP, optional password)
+    /// Removes a specific temporary share staging root (or the `FlowFileShare_*` ancestor containing `fileURL`).
+    static func cleanupStagingRoot(for fileOrDirURL: URL) {
+        let fm = FileManager.default
+        let tempRoot = URL(fileURLWithPath: NSTemporaryDirectory()).standardizedFileURL.path
+        var current = fileOrDirURL.standardizedFileURL
+        while current.path.hasPrefix(tempRoot) && current.path != tempRoot {
+            if current.lastPathComponent.hasPrefix(stagingPrefix) {
+                try? fm.removeItem(at: current)
+                return
+            }
+            current = current.deletingLastPathComponent()
+        }
+    }
+
+    /// Removes expired `FlowFileShare_*` directories in NSTemporaryDirectory so non-zipped staging copies never leak.
+    static func cleanupStaleStagingDirectories(maxAgeSeconds: TimeInterval = 1800) {
+        let fm = FileManager.default
+        let tempDir = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+        guard let children = try? fm.contentsOfDirectory(
+            at: tempDir,
+            includingPropertiesForKeys: [.creationDateKey, .contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return
+        }
+        let now = Date()
+        for child in children where child.lastPathComponent.hasPrefix(stagingPrefix) {
+            if maxAgeSeconds <= 0 {
+                try? fm.removeItem(at: child)
+                continue
+            }
+            let rv = try? child.resourceValues(forKeys: [.creationDateKey, .contentModificationDateKey])
+            let timestamp = rv?.contentModificationDate ?? rv?.creationDate ?? .distantPast
+            if now.timeIntervalSince(timestamp) >= maxAgeSeconds {
+                try? fm.removeItem(at: child)
+            }
+        }
+    }
+
+    /// Prepares files according to user's smart options (HEIC->JPG, strip GPS/EXIF, Windows-clean ZIP).
     static func prepareItems(
         _ items: [FileItem],
         options: SharePreparationOptions
     ) throws -> [URL] {
         guard !items.isEmpty else { throw ShareHubError.emptySelection }
-        if options.usePassword && options.password.trimmingCharacters(in: .whitespaces).isEmpty {
-            throw ShareHubError.missingPassword
-        }
+        cleanupStaleStagingDirectories()
 
         let fm = FileManager.default
         let sessionRoot = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent("FlowFileShare_\(UUID().uuidString.prefix(8))", isDirectory: true)
+            .appendingPathComponent("\(stagingPrefix)\(UUID().uuidString.prefix(8))", isDirectory: true)
         let stagingDir = sessionRoot.appendingPathComponent("staged", isDirectory: true)
         try fm.createDirectory(at: stagingDir, withIntermediateDirectories: true)
 
         var stagedURLs: [URL] = []
-        for item in items {
-            let sourceURL = item.navigationTargetURL
-            if options.convertHeicAndStripGPS && !item.isNavigableFolder,
-               let sanitized = sanitizeAndConvertImageIfApplicable(sourceURL: sourceURL, into: stagingDir) {
-                stagedURLs.append(sanitized)
-            } else {
-                let dst = FileSystemService.uniqueDestinationURL(for: sourceURL, in: stagingDir)
-                try fm.copyItem(at: sourceURL, to: dst)
-                stagedURLs.append(dst)
+        do {
+            for item in items {
+                let sourceURL = item.navigationTargetURL
+                if options.convertHeicAndStripGPS && !item.isNavigableFolder,
+                   let sanitized = sanitizeAndConvertImageIfApplicable(sourceURL: sourceURL, into: stagingDir) {
+                    stagedURLs.append(sanitized)
+                } else {
+                    let dst = FileSystemService.uniqueDestinationURL(for: sourceURL, in: stagingDir)
+                    try fm.copyItem(at: sourceURL, to: dst)
+                    stagedURLs.append(dst)
+                }
             }
+        } catch {
+            try? fm.removeItem(at: sessionRoot)
+            throw error
         }
 
-        let shouldZip = options.packageAsCleanZip || options.usePassword
-        guard shouldZip else {
+        guard options.packageAsCleanZip else {
             return stagedURLs
         }
 
@@ -106,21 +143,24 @@ enum ShareHubService {
         proc.currentDirectoryURL = stagingDir
 
         // -X strips extra macOS Finder/UID attributes; -x excludes .DS_Store & __MACOSX for 100% clean Windows zips!
-        var args: [String] = ["-r", "-q", "-X"]
-        if options.usePassword {
-            args.append(contentsOf: ["-P", options.password])
-        }
-        args.append(zipOutputURL.path)
+        var args: [String] = ["-r", "-q", "-X", zipOutputURL.path]
         for staged in stagedURLs {
-            args.append(staged.lastPathComponent)
+            let name = staged.lastPathComponent
+            args.append(name.hasPrefix("-") ? "./\(name)" : name)
         }
         args.append(contentsOf: ["-x", "*.DS_Store", "*__MACOSX*", "*/._*", "._*"])
         proc.arguments = args
 
-        try proc.run()
-        proc.waitUntilExit()
+        do {
+            try proc.run()
+            proc.waitUntilExit()
+        } catch {
+            try? fm.removeItem(at: sessionRoot)
+            throw error
+        }
 
         guard proc.terminationStatus == 0, fm.fileExists(atPath: zipOutputURL.path) else {
+            try? fm.removeItem(at: sessionRoot)
             throw ShareHubError.zipCreationFailed
         }
 

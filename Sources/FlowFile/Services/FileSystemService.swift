@@ -220,19 +220,69 @@ enum FileSystemService {
         return target
     }
 
+    static func referToSameFile(_ urlA: URL, _ urlB: URL) -> Bool {
+        guard let idA = (try? urlA.resourceValues(forKeys: [.fileResourceIdentifierKey]))?.fileResourceIdentifier,
+              let idB = (try? urlB.resourceValues(forKeys: [.fileResourceIdentifierKey]))?.fileResourceIdentifier else {
+            return false
+        }
+        return idA.isEqual(idB)
+    }
+
+    static func sameVolume(_ urlA: URL, _ urlB: URL) -> Bool {
+        guard let volA = (try? urlA.resourceValues(forKeys: [.volumeIdentifierKey]))?.volumeIdentifier,
+              let volB = (try? urlB.resourceValues(forKeys: [.volumeIdentifierKey]))?.volumeIdentifier else {
+            return false
+        }
+        return volA.isEqual(volB)
+    }
+
+    static func preferredDragOperation(
+        for sourceURLs: [URL],
+        to destinationDir: URL,
+        modifierFlags: NSEvent.ModifierFlags
+    ) -> TransferOperationType {
+        if modifierFlags.contains(.option) {
+            return .copy
+        }
+        if modifierFlags.contains(.command) {
+            return .move
+        }
+        guard let first = sourceURLs.first else {
+            return .copy
+        }
+        return sameVolume(first, destinationDir) ? .move : .copy
+    }
+
     @discardableResult
     static func renameItem(at sourceURL: URL, to rawNewName: String) throws -> URL {
         let trimmed = rawNewName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw FileSystemError.emptyName }
-        let parent = sourceURL.deletingLastPathComponent()
-        let destination = parent.appendingPathComponent(trimmed)
-        if destination.standardizedFileURL == sourceURL.standardizedFileURL {
+        if trimmed == sourceURL.lastPathComponent {
             return sourceURL
         }
-        if FileManager.default.fileExists(atPath: destination.path) {
-            throw FileSystemError.targetAlreadyExists(trimmed)
+
+        let fm = FileManager.default
+        let parent = sourceURL.deletingLastPathComponent()
+        let destination = parent.appendingPathComponent(trimmed)
+
+        if fm.fileExists(atPath: destination.path) {
+            if !referToSameFile(sourceURL, destination) {
+                throw FileSystemError.targetAlreadyExists(trimmed)
+            }
+            // Case-only rename of the same inode on case-insensitive APFS/HFS+/FAT/SMB:
+            // bounce through a unique temporary sibling so every filesystem updates directory entry casing.
+            let tempURL = parent.appendingPathComponent(".flowfile_casetmp_\(UUID().uuidString.prefix(8))")
+            try fm.moveItem(at: sourceURL, to: tempURL)
+            do {
+                try fm.moveItem(at: tempURL, to: destination)
+                return destination
+            } catch {
+                try? fm.moveItem(at: tempURL, to: sourceURL)
+                throw error
+            }
         }
-        try FileManager.default.moveItem(at: sourceURL, to: destination)
+
+        try fm.moveItem(at: sourceURL, to: destination)
         return destination
     }
 

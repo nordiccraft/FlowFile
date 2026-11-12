@@ -46,8 +46,8 @@ FlowFile er utviklet som et uavhengig prosjekt uten kommersielt Apple Developer-
    Utgivelsene under **[Releases](https://github.com/nordiccraft/FlowFile/releases/latest)** og [`Casks/flowfile.rb`](Casks/flowfile.rb) bygges og oppdateres direkte fra kildekoden på GitHub sine egne servere via [`.github/workflows/release.yml`](.github/workflows/release.yml), med åpen byggelogg og tilhørende `SHA256SUMS.txt`.
 3. **Standard macOS-rettigheter per mappe:**  
    FlowFile krever ikke full tilgang ved installasjon. macOS spør kun om vanlig mappetillatelse første gang du selv navigerer inn i mapper som *Skrivebord*, *Dokumenter* eller *Nedlastinger* (*Full disktilgang* i Systeminnstillinger er helt valgfritt for de som ønsker å slippe enkeltspørsmål per mappe, slik som i ForkLift og Path Finder).
-4. **Verifiserte oppdateringer:**  
-   Når du selv velger å oppdatere i appen (*FlowFile → Se etter oppdateringer...*), hentes pakken over HTTPS fra dette repoet og kontrolleres mot utgivelsens `SHA256SUMS.txt` (`CryptoKit.SHA256`), `CFBundleIdentifier` og `codesign` før oppdatering.
+4. **Oppdateringer og integritetskontroll:**  
+   Når du selv velger å oppdatere i appen (*FlowFile → Se etter oppdateringer...*), krever oppdatereren en gyldig `SHA256SUMS.txt` over HTTPS (avbryter ved manglende eller avvikende sjekksum), sjekker `CFBundleIdentifier` og `codesign --verify --deep --strict`, og erstatter app-pakken atomisk med automatisk tilbakerulling ved feil. *(Merk: så lenge byggene er ad-hoc-signert uten betalt Apple Developer ID-sertifikat, bygger autentisiteten på GitHub HTTPS/kontosikkerhet og åpne GitHub Actions-bygg – eller på den låste `sha256`-verdien i Homebrew Cask.)*
 
 ---
 

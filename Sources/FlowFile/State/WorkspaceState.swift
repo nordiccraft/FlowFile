@@ -155,6 +155,7 @@ final class WorkspaceState {
 
     var clipboardURLs: [URL] = []
     var clipboardOperation: ClipboardOperation? = nil
+    private var clipboardChangeCount: Int = -1
 
     var favorites: [FavoriteItem] = [] {
         didSet { saveFavorites() }
@@ -764,8 +765,34 @@ final class WorkspaceState {
 
     // MARK: - Clipboard & Queued File Operations
 
+    var activeCutURLs: Set<URL> {
+        guard clipboardOperation == .cut,
+              NSPasteboard.general.changeCount == clipboardChangeCount else {
+            return []
+        }
+        return Set(clipboardURLs)
+    }
+
     func isItemCut(_ url: URL) -> Bool {
-        clipboardOperation == .cut && clipboardURLs.contains(url.standardizedFileURL)
+        guard clipboardOperation == .cut,
+              NSPasteboard.general.changeCount == clipboardChangeCount else {
+            return false
+        }
+        return clipboardURLs.contains(url.standardizedFileURL)
+    }
+
+    func selectAllInActiveTab() {
+        activeTab.selectedURLs = Set(activeTab.displayedItems.map(\.url))
+        if !activeTab.isInsideArchive {
+            QuickLookCoordinator.shared.updateSelectionIfVisible(Array(activeTab.selectedURLs))
+        }
+    }
+
+    private func syncClipboardWithSystemPasteboard() {
+        if NSPasteboard.general.changeCount != clipboardChangeCount {
+            clipboardURLs.removeAll()
+            clipboardOperation = nil
+        }
     }
 
     func copySelected() {
@@ -814,6 +841,8 @@ final class WorkspaceState {
             showStatus("Kan ikke lime inn direkte i et arkiv")
             return
         }
+        syncClipboardWithSystemPasteboard()
+
         let targetDir = activeTab.currentURL
         var urlsToProcess = clipboardURLs
         let op = clipboardOperation ?? .copy
@@ -832,6 +861,7 @@ final class WorkspaceState {
             transferQueue.enqueue(operation: .move, urls: urlsToProcess, to: targetDir)
             clipboardURLs.removeAll()
             clipboardOperation = nil
+            clipboardChangeCount = -1
         } else {
             transferQueue.enqueue(operation: .copy, urls: urlsToProcess, to: targetDir)
         }
@@ -1174,6 +1204,7 @@ final class WorkspaceState {
         let pb = NSPasteboard.general
         pb.clearContents()
         pb.writeObjects(urls as [NSURL])
+        clipboardChangeCount = pb.changeCount
     }
 
     func showStatus(_ text: String) {
