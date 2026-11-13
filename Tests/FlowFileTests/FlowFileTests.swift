@@ -282,6 +282,39 @@ enum FlowFileVerificationSuite {
         try expect(parsed.checksumsURL?.absoluteString.hasSuffix("SHA256SUMS.txt") == true)
     }
 
+    static func atomicBundleInstallReplacesCleanly() async throws {
+        try await withTempDir { tempDir in
+            let appsDir = tempDir.appendingPathComponent("Apps", isDirectory: true)
+            let incomingDir = tempDir.appendingPathComponent("Incoming", isDirectory: true)
+            try FileManager.default.createDirectory(at: appsDir, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: incomingDir, withIntermediateDirectories: true)
+
+            let installedApp = appsDir.appendingPathComponent("FlowFile.app", isDirectory: true)
+            let installedMacOS = installedApp.appendingPathComponent("Contents/MacOS", isDirectory: true)
+            try FileManager.default.createDirectory(at: installedMacOS, withIntermediateDirectories: true)
+            try Data("old-1.0.3".utf8).write(to: installedMacOS.appendingPathComponent("FlowFile"))
+
+            let extractedApp = incomingDir.appendingPathComponent("FlowFile.app", isDirectory: true)
+            let extractedMacOS = extractedApp.appendingPathComponent("Contents/MacOS", isDirectory: true)
+            try FileManager.default.createDirectory(at: extractedMacOS, withIntermediateDirectories: true)
+            try Data("new-1.0.5".utf8).write(to: extractedMacOS.appendingPathComponent("FlowFile"))
+
+            try UpdateService.installExtractedBundleAtomically(
+                extractedApp: extractedApp,
+                destinationAppURL: installedApp
+            )
+
+            let updatedPayload = try String(
+                contentsOf: installedMacOS.appendingPathComponent("FlowFile"),
+                encoding: .utf8
+            )
+            try expect(updatedPayload == "new-1.0.5")
+
+            let allEntries = try FileManager.default.contentsOfDirectory(atPath: appsDir.path)
+            try expect(allEntries == ["FlowFile.app"], "No hidden staging or backup bundles may remain")
+        }
+    }
+
     // MARK: - 11, 12, 13 & Path Traversal: ArchiveService & TabState
 
     static func archiveSecurityAndWildcards() async throws {
@@ -445,6 +478,7 @@ enum FlowFileVerificationSuite {
         try await singleItemCaseOnlyRename()
         try await updateVerificationFailsClosed()
         try releaseNotesCleaningAndPayloadParsing()
+        try await atomicBundleInstallReplacesCleanly()
         try await archiveSecurityAndWildcards()
         try await folderNamedLikeArchive()
         try wifiShareSecurity()
@@ -474,6 +508,10 @@ final class FlowFileTests: XCTestCase {
 
     func testReleaseNotesCleaningAndPayloadParsing() throws {
         try FlowFileVerificationSuite.releaseNotesCleaningAndPayloadParsing()
+    }
+
+    func testAtomicBundleInstallReplacesCleanly() async throws {
+        try await FlowFileVerificationSuite.atomicBundleInstallReplacesCleanly()
     }
 
     func testArchiveSecurityAndWildcards() async throws {
@@ -506,7 +544,7 @@ final class FlowFileTests: XCTestCase {
 struct LocalCLTTestRunner {
     static func main() async throws {
         try await FlowFileVerificationSuite.runAll()
-        print("ALL 11 FLOWFILE TEST SUITES PASSED")
+        print("ALL 12 FLOWFILE TEST SUITES PASSED")
     }
 }
 #endif
