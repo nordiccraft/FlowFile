@@ -1,3 +1,4 @@
+import CoreServices
 import CryptoKit
 import Foundation
 @testable import FlowFile
@@ -472,6 +473,105 @@ enum FlowFileVerificationSuite {
         try expect(stepOutput == original)
     }
 
+    // MARK: - Default File Browser & Smart External Tab Routing
+
+    @MainActor
+    static func defaultFileBrowserAndSmartTabRouting() async throws {
+        try await withTempDir { tempDir in
+            // 1. LSHandlers deduplication when toggling between FlowFile and Finder
+            let initialHandlers: [[String: Any]] = [
+                ["LSHandlerContentType": "public.plain-text", "LSHandlerRoleAll": "com.apple.TextEdit"],
+                ["LSHandlerContentType": "public.folder", "LSHandlerRoleAll": "com.apple.finder"],
+                ["LSHandlerContentType": "PUBLIC.FOLDER", "LSHandlerRoleAll": "com.old.app"]
+            ]
+            let withFlowFile = DefaultFileBrowserService.upsertLaunchServicesFolderHandler(
+                in: initialHandlers,
+                bundleID: DefaultFileBrowserService.flowFileBundleID
+            )
+            try expect(withFlowFile.count == 2, "Duplicate public.folder entries must be collapsed to one")
+            try expect((withFlowFile.last?["LSHandlerRoleAll"] as? String) == "com.flowfile.app")
+
+            let restoredFinder = DefaultFileBrowserService.upsertLaunchServicesFolderHandler(
+                in: withFlowFile,
+                bundleID: DefaultFileBrowserService.finderBundleID
+            )
+            try expect(restoredFinder.count == 2)
+            try expect((restoredFinder.last?["LSHandlerRoleAll"] as? String) == "com.apple.finder")
+
+            // 2. Folder vs File vs .app bundle resolution for open and reveal ('mvis') events
+            let downloadsDir = tempDir.appendingPathComponent("Downloads", isDirectory: true)
+            let workDir = tempDir.appendingPathComponent("Work", isDirectory: true)
+            let appBundle = downloadsDir.appendingPathComponent("Sample.app", isDirectory: true)
+            try FileManager.default.createDirectory(at: downloadsDir, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: workDir, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: appBundle, withIntermediateDirectories: true)
+
+            let pdfA = downloadsDir.appendingPathComponent("alpha.pdf")
+            let pdfB = downloadsDir.appendingPathComponent("beta.pdf")
+            try Data("A".utf8).write(to: pdfA)
+            try Data("B".utf8).write(to: pdfB)
+
+            let openFolderRes = DefaultFileBrowserService.resolveExternalTarget(for: downloadsDir, isRevealEvent: false)
+            try expect(openFolderRes.folderURL == downloadsDir.standardizedFileURL)
+            try expect(openFolderRes.itemToSelect == nil)
+
+            let revealFolderRes = DefaultFileBrowserService.resolveExternalTarget(for: downloadsDir, isRevealEvent: true)
+            try expect(revealFolderRes.folderURL == tempDir.standardizedFileURL)
+            try expect(revealFolderRes.itemToSelect == downloadsDir.standardizedFileURL)
+
+            let revealFileRes = DefaultFileBrowserService.resolveExternalTarget(for: pdfA, isRevealEvent: true)
+            try expect(revealFileRes.folderURL == downloadsDir.standardizedFileURL)
+            try expect(revealFileRes.itemToSelect == pdfA.standardizedFileURL)
+
+            let openPackageRes = DefaultFileBrowserService.resolveExternalTarget(for: appBundle, isRevealEvent: false)
+            try expect(openPackageRes.folderURL == downloadsDir.standardizedFileURL, ".app package should reveal in parent folder")
+            try expect(openPackageRes.itemToSelect == appBundle.standardizedFileURL)
+
+            // 3. Apple Event ('mvis') list extraction
+            let event = NSAppleEventDescriptor.appleEvent(
+                withEventClass: AEEventClass(0x666E6472),
+                eventID: AEEventID(0x6D766973),
+                targetDescriptor: nil,
+                returnID: AEReturnID(kAutoGenerateReturnID),
+                transactionID: AETransactionID(kAnyTransactionID)
+            )
+            let listDesc = NSAppleEventDescriptor.list()
+            listDesc.insert(NSAppleEventDescriptor(fileURL: pdfA), at: 1)
+            listDesc.insert(NSAppleEventDescriptor(fileURL: pdfB), at: 2)
+            event.setParam(listDesc, forKeyword: AEKeyword(keyDirectObject))
+            let extracted = DefaultFileBrowserService.extractURLs(fromAppleEvent: event)
+            try expect(extracted.map(\.standardizedFileURL) == [pdfA.standardizedFileURL, pdfB.standardizedFileURL])
+
+            // 4. Smart New Tab, Reuse Existing Tab & Active Tab routing in WorkspaceState
+            let ws = WorkspaceState()
+            ws.externalOpenTabBehavior = .smartNewTab
+
+            // Cold launch reuses the initial tab instead of leaving an extra Home tab
+            ws.handleExternalOpenOrReveal(urls: [workDir], isRevealEvent: false, isColdLaunchOverride: true)
+            try expect(ws.activePane.tabs.count == 1)
+            try expect(ws.activeTab.currentURL == workDir.standardizedFileURL)
+
+            // Subsequent reveal in another folder opens a new tab and selects the file
+            ws.handleExternalOpenOrReveal(urls: [pdfA], isRevealEvent: true, isColdLaunchOverride: false)
+            try expect(ws.activePane.tabs.count == 2)
+            try expect(ws.activeTab.currentURL == downloadsDir.standardizedFileURL)
+            try expect(ws.activeTab.selectedURLs == [pdfA.standardizedFileURL])
+
+            // Revealing a second file in the already-open Downloads folder reuses that tab instead of creating a 3rd tab
+            ws.activePane.activeTabID = ws.activePane.tabs[0].id
+            ws.handleExternalOpenOrReveal(urls: [pdfB], isRevealEvent: true, isColdLaunchOverride: false)
+            try expect(ws.activePane.tabs.count == 2, "Must reuse existing Downloads tab")
+            try expect(ws.activeTab.currentURL == downloadsDir.standardizedFileURL)
+            try expect(ws.activeTab.selectedURLs == [pdfB.standardizedFileURL])
+
+            // ActiveTab preference navigates in-place without adding tabs
+            ws.externalOpenTabBehavior = .activeTab
+            ws.handleExternalOpenOrReveal(urls: [tempDir], isRevealEvent: false, isColdLaunchOverride: false)
+            try expect(ws.activePane.tabs.count == 2)
+            try expect(ws.activeTab.currentURL == tempDir.standardizedFileURL)
+        }
+    }
+
     static func runAll() async throws {
         try await multiRenameUppercaseAndCaseOnly()
         try await batchRenameRollbackOnMidBatchFailure()
@@ -485,6 +585,7 @@ enum FlowFileVerificationSuite {
         try await wifiShareRestartCancellationSafety()
         try await gitRepoRootLookup()
         try utf8ChunkDecoderSplitBoundaries()
+        try await defaultFileBrowserAndSmartTabRouting()
     }
 }
 
@@ -538,13 +639,18 @@ final class FlowFileTests: XCTestCase {
     func testUTF8ChunkDecoderSplitBoundaries() throws {
         try FlowFileVerificationSuite.utf8ChunkDecoderSplitBoundaries()
     }
+
+    @MainActor
+    func testDefaultFileBrowserAndSmartTabRouting() async throws {
+        try await FlowFileVerificationSuite.defaultFileBrowserAndSmartTabRouting()
+    }
 }
 #else
 @main
 struct LocalCLTTestRunner {
     static func main() async throws {
         try await FlowFileVerificationSuite.runAll()
-        print("ALL 12 FLOWFILE TEST SUITES PASSED")
+        print("ALL 13 FLOWFILE TEST SUITES PASSED")
     }
 }
 #endif

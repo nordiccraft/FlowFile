@@ -247,6 +247,78 @@ struct SettingsSheetView: View {
 
             Divider()
 
+            // Default File Browser in macOS
+            VStack(alignment: .leading, spacing: 9) {
+                Text(workspace.tr("Standard filutforsker i macOS", "Default File Browser in macOS"))
+                    .font(.system(size: 13, weight: .semibold))
+
+                HStack(spacing: 8) {
+                    LucideIcon(
+                        kind: workspace.isDefaultFileBrowser ? .checkCircle : .settings,
+                        size: 16
+                    )
+                    .foregroundStyle(workspace.isDefaultFileBrowser ? .green : .secondary)
+
+                    Text(workspace.isDefaultFileBrowser
+                         ? workspace.tr("Aktiv standard: FlowFile", "Current default: FlowFile")
+                         : workspace.tr("Aktiv standard: macOS Finder", "Current default: macOS Finder"))
+                        .font(.system(size: 12.5, weight: .medium))
+
+                    Spacer()
+
+                    if workspace.isUpdatingDefaultBrowser {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+
+                    if workspace.isDefaultFileBrowser {
+                        Button(workspace.tr("Oppdater registrering", "Re-apply FlowFile")) {
+                            Task { await workspace.setAsDefaultFileBrowser() }
+                        }
+                        .buttonStyle(.glass)
+                        .controlSize(.small)
+                        .disabled(workspace.isUpdatingDefaultBrowser)
+                    } else {
+                        Button(workspace.tr("Sett FlowFile som standard", "Set FlowFile as Default")) {
+                            Task { await workspace.setAsDefaultFileBrowser() }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        .disabled(workspace.isUpdatingDefaultBrowser)
+                    }
+
+                    Button(workspace.tr("Tilbakestill til Finder", "Restore Finder")) {
+                        Task { await workspace.resetDefaultFileBrowserToFinder() }
+                    }
+                    .buttonStyle(.glass)
+                    .controlSize(.small)
+                    .disabled(workspace.isUpdatingDefaultBrowser || !workspace.isDefaultFileBrowser)
+                }
+
+                HStack(spacing: 8) {
+                    Text(workspace.tr("Åpne eksterne mapper i:", "Open external folders in:"))
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+
+                    Picker("", selection: $workspace.externalOpenTabBehavior) {
+                        ForEach(ExternalOpenTabBehavior.allCases) { mode in
+                            Text(mode.displayName(in: workspace.appLanguage)).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+
+                Text(workspace.tr(
+                    "Gjør at «Vis i Finder» fra nettlesere, Spotlight og Terminal åpner i FlowFile. Apper som allerede kjører kan måtte startes på nytt før byttet trer i kraft. Åpne/Lagre-dialoger (⌘O/⌘S), Skrivebord og Dock tilhører alltid Finder.",
+                    "Routes 'Show in Finder' from browsers, Spotlight, and Terminal to FlowFile. Already running apps may need a restart to pick up the change. Open/Save panels (⌘O/⌘S), Desktop, and Dock always remain managed by Finder."
+                ))
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Divider()
+
             VStack(alignment: .leading, spacing: 10) {
                 Text(workspace.tr("Tastatur & Total Commander-oppførsel", "Keyboard & Total Commander Behavior"))
                     .font(.system(size: 13, weight: .semibold))
@@ -295,7 +367,7 @@ struct SettingsSheetView: View {
             Spacer(minLength: 4)
         }
         .padding(22)
-        .frame(width: 540)
+        .frame(width: 580)
         .onAppear {
             workspace.refreshPermissionsStatus()
         }

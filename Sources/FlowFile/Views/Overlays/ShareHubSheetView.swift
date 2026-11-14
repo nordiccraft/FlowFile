@@ -176,7 +176,7 @@ struct ShareHubSheetView: View {
                         Button("Åpne skydeling") {
                             let rawURLs = targetItems.map(\.url)
                             if !ShareHubService.shareViaCloudService(rawURLs) {
-                                NSWorkspace.shared.activateFileViewerSelecting(rawURLs)
+                                DefaultFileBrowserService.revealExplicitlyInAppleFinder(rawURLs)
                             }
                         }
                         .buttonStyle(.glass)

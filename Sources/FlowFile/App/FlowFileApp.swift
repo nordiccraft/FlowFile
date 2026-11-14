@@ -3,10 +3,47 @@ import Quartz
 import SwiftUI
 
 final class FlowFileAppDelegate: NSObject, NSApplicationDelegate {
+    private static let finderSuiteClass = AEEventClass(0x666E6472) // 'fndr'
+    private static let miscSuiteClass = AEEventClass(0x6D697363)   // 'misc'
+    private static let revealEventID = AEEventID(0x6D766973)       // 'mvis' (kAERevealSelection)
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        let aeManager = NSAppleEventManager.shared()
+        aeManager.setEventHandler(
+            self,
+            andSelector: #selector(handleRevealAppleEvent(_:withReplyEvent:)),
+            forEventClass: Self.finderSuiteClass,
+            andEventID: Self.revealEventID
+        )
+        aeManager.setEventHandler(
+            self,
+            andSelector: #selector(handleRevealAppleEvent(_:withReplyEvent:)),
+            forEventClass: Self.miscSuiteClass,
+            andEventID: Self.revealEventID
+        )
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
         ShareHubService.cleanupStaleStagingDirectories()
+    }
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        Task { @MainActor in
+            ExternalOpenCoordinator.shared.receive(urls: urls, isRevealEvent: false)
+        }
+    }
+
+    @objc private func handleRevealAppleEvent(
+        _ event: NSAppleEventDescriptor,
+        withReplyEvent replyEvent: NSAppleEventDescriptor
+    ) {
+        let urls = DefaultFileBrowserService.extractURLs(fromAppleEvent: event)
+        guard !urls.isEmpty else { return }
+        Task { @MainActor in
+            ExternalOpenCoordinator.shared.receive(urls: urls, isRevealEvent: true)
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -40,6 +77,10 @@ struct FlowFileApp: App {
     var body: some Scene {
         WindowGroup("FlowFile") {
             MainWindowView(workspace: workspace)
+                .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
+                .onOpenURL { url in
+                    ExternalOpenCoordinator.shared.receive(urls: [url], isRevealEvent: false)
+                }
         }
         .defaultSize(width: 1220, height: 780)
         .windowToolbarStyle(.unifiedCompact(showsTitle: false))

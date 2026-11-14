@@ -53,9 +53,9 @@ final class PaneState: Identifiable {
         self.activeTabID = firstTab.id
     }
 
-    func addTab(at url: URL? = nil, showHidden: Bool) {
+    func addTab(at url: URL? = nil, showHidden: Bool, selecting preferredSelection: URL? = nil) {
         let target = url ?? activeTab.currentURL
-        let tab = TabState(initialURL: target, showHidden: showHidden)
+        let tab = TabState(initialURL: target, showHidden: showHidden, preferredSelection: preferredSelection)
         tabs.append(tab)
         activeTabID = tab.id
     }
@@ -132,8 +132,17 @@ final class WorkspaceState {
     let updateService = UpdateService()
     var isUpdateSheetVisible: Bool = false
     var hasFullDiskAccess: Bool = false
+    var isDefaultFileBrowser: Bool = false
+    var isUpdatingDefaultBrowser: Bool = false
+    var externalOpenTabBehavior: ExternalOpenTabBehavior {
+        didSet {
+            UserDefaults.standard.set(externalOpenTabBehavior.rawValue, forKey: "flowfile.externalOpenTabBehavior")
+        }
+    }
     var dismissedFDABanner: Bool = false
     private var dualPaneOpenedByCompare: Bool = false
+    private let launchTimestamp = Date()
+    private var hasHandledColdLaunchExternalOpen: Bool = false
 
     private static var onboardingDefaultsKey: String {
         let bundlePath = Bundle.main.bundleURL.standardizedFileURL.path
@@ -192,13 +201,17 @@ final class WorkspaceState {
         let langRaw = UserDefaults.standard.string(forKey: "appLanguage") ?? AppLanguage.system.rawValue
         let resolvedLang = AppLanguage(rawValue: langRaw) ?? .system
         LocalizationCenter.shared.currentLanguage = resolvedLang
+        let extTabRaw = UserDefaults.standard.string(forKey: "flowfile.externalOpenTabBehavior") ?? ExternalOpenTabBehavior.smartNewTab.rawValue
+        let resolvedExtTab = ExternalOpenTabBehavior(rawValue: extTabRaw) ?? .smartNewTab
 
         self.showHiddenFiles = hidden
         self.swapSpaceShortcut = swapSpace
         self.autoCollapseSidebarInDualPane = autoCollapse
         self.showFKeyBarAlways = fKeyAlways
         self.appLanguage = resolvedLang
+        self.externalOpenTabBehavior = resolvedExtTab
         self.hasFullDiskAccess = PermissionsService.hasFullDiskAccess()
+        self.isDefaultFileBrowser = DefaultFileBrowserService.isFlowFileDefault()
 
         let homeURL = FileManager.default.homeDirectoryForCurrentUser
 
@@ -215,6 +228,11 @@ final class WorkspaceState {
         if !UserDefaults.standard.bool(forKey: Self.onboardingDefaultsKey) {
             self.tour.isActive = true
             self.tour.currentStep = .welcomeSetup
+        }
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            ExternalOpenCoordinator.shared.attach(workspace: self)
         }
 
         if updateService.checkAutomaticallyOnLaunch {
@@ -388,6 +406,148 @@ final class WorkspaceState {
 
     func refreshPermissionsStatus() {
         hasFullDiskAccess = PermissionsService.hasFullDiskAccess()
+        isDefaultFileBrowser = DefaultFileBrowserService.isFlowFileDefault()
+    }
+
+    @MainActor
+    func setAsDefaultFileBrowser() async {
+        guard !isUpdatingDefaultBrowser else { return }
+        isUpdatingDefaultBrowser = true
+        defer { isUpdatingDefaultBrowser = false }
+        do {
+            try await DefaultFileBrowserService.setFlowFileAsDefault()
+            isDefaultFileBrowser = DefaultFileBrowserService.isFlowFileDefault()
+            showStatus(tr(
+                "FlowFile er satt som standard filutforsker i macOS",
+                "FlowFile is now set as the default file browser in macOS"
+            ))
+        } catch {
+            isDefaultFileBrowser = DefaultFileBrowserService.isFlowFileDefault()
+            alertErrorMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    func resetDefaultFileBrowserToFinder() async {
+        guard !isUpdatingDefaultBrowser else { return }
+        isUpdatingDefaultBrowser = true
+        defer { isUpdatingDefaultBrowser = false }
+        do {
+            try await DefaultFileBrowserService.resetToFinder()
+            isDefaultFileBrowser = DefaultFileBrowserService.isFlowFileDefault()
+            showStatus(tr(
+                "Tilbakestilt til macOS Finder som standard filutforsker",
+                "Restored macOS Finder as the default file browser"
+            ))
+        } catch {
+            isDefaultFileBrowser = DefaultFileBrowserService.isFlowFileDefault()
+            alertErrorMessage = error.localizedDescription
+        }
+    }
+
+    /// Handles folders and «Show in Finder» file reveal events sent to FlowFile from browsers, Spotlight, Terminal, etc.
+    func handleExternalOpenOrReveal(
+        urls: [URL],
+        isRevealEvent: Bool,
+        isColdLaunchOverride: Bool? = nil
+    ) {
+        guard !urls.isEmpty else { return }
+
+        var orderedFolders: [URL] = []
+        var selectionsByFolder: [URL: [URL]] = [:]
+
+        for rawURL in urls {
+            let resolved = DefaultFileBrowserService.resolveExternalTarget(for: rawURL, isRevealEvent: isRevealEvent)
+            let folder = resolved.folderURL
+            guard FileManager.default.fileExists(atPath: folder.path) else { continue }
+
+            if selectionsByFolder[folder] == nil {
+                orderedFolders.append(folder)
+                selectionsByFolder[folder] = []
+            }
+            if let item = resolved.itemToSelect {
+                selectionsByFolder[folder, default: []].append(item)
+            }
+        }
+
+        guard !orderedFolders.isEmpty else { return }
+
+        for folderURL in orderedFolders {
+            let itemsToSelect = selectionsByFolder[folderURL] ?? []
+            let needsHidden = itemsToSelect.contains { $0.lastPathComponent.hasPrefix(".") }
+            let effectiveShowHidden = showHiddenFiles || needsHidden
+
+            // 1. Reuse an already-open tab displaying this exact folder (search active pane first, then inactive dual pane)
+            if let existingInActive = activePane.tabs.first(where: { !$0.isInsideArchive && $0.currentURL.standardizedFileURL == folderURL }) {
+                activePane.activeTabID = existingInActive.id
+                existingInActive.reload(
+                    showHidden: effectiveShowHidden || existingInActive.currentShowHidden,
+                    preferredSelection: itemsToSelect.first,
+                    selectFirstIfEmpty: true
+                )
+                if itemsToSelect.count > 1 {
+                    let valid = Set(existingInActive.allItems.map(\.url))
+                    let matched = Set(itemsToSelect).intersection(valid)
+                    if !matched.isEmpty { existingInActive.selectedURLs = matched }
+                }
+                existingInActive.scrollToSelectionGeneration &+= 1
+            } else if isDualPane,
+                      let existingInInactive = inactivePane.tabs.first(where: { !$0.isInsideArchive && $0.currentURL.standardizedFileURL == folderURL }) {
+                activePaneID = inactivePane.id
+                activePane.activeTabID = existingInInactive.id
+                existingInInactive.reload(
+                    showHidden: effectiveShowHidden || existingInInactive.currentShowHidden,
+                    preferredSelection: itemsToSelect.first,
+                    selectFirstIfEmpty: true
+                )
+                if itemsToSelect.count > 1 {
+                    let valid = Set(existingInInactive.allItems.map(\.url))
+                    let matched = Set(itemsToSelect).intersection(valid)
+                    if !matched.isEmpty { existingInInactive.selectedURLs = matched }
+                }
+                existingInInactive.scrollToSelectionGeneration &+= 1
+            } else {
+                let canReuseColdLaunchTab = isColdLaunchOverride ?? (
+                    !hasHandledColdLaunchExternalOpen
+                    && Date().timeIntervalSince(launchTimestamp) < 2.5
+                    && activePane.tabs.count == 1
+                    && activeTab.backStack.isEmpty
+                    && activeTab.forwardStack.isEmpty
+                )
+                hasHandledColdLaunchExternalOpen = true
+
+                if canReuseColdLaunchTab || externalOpenTabBehavior == .activeTab {
+                    activeTab.navigate(
+                        to: folderURL,
+                        showHidden: effectiveShowHidden,
+                        recordHistory: !canReuseColdLaunchTab,
+                        selecting: itemsToSelect.first
+                    )
+                    if itemsToSelect.count > 1 {
+                        let valid = Set(activeTab.allItems.map(\.url))
+                        let matched = Set(itemsToSelect).intersection(valid)
+                        if !matched.isEmpty { activeTab.selectedURLs = matched }
+                    }
+                    activeTab.scrollToSelectionGeneration &+= 1
+                } else {
+                    activePane.addTab(
+                        at: folderURL,
+                        showHidden: effectiveShowHidden,
+                        selecting: itemsToSelect.first
+                    )
+                    if itemsToSelect.count > 1 {
+                        let valid = Set(activeTab.allItems.map(\.url))
+                        let matched = Set(itemsToSelect).intersection(valid)
+                        if !matched.isEmpty { activeTab.selectedURLs = matched }
+                    }
+                    activeTab.scrollToSelectionGeneration &+= 1
+                }
+            }
+
+            isCompareActive = false
+            recordRecentFolder(folderURL)
+            syncTerminalIfOpen()
+        }
     }
 
     func openUpdateChecker() {

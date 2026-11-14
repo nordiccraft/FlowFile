@@ -42,6 +42,7 @@ final class TabState: Identifiable {
     var viewMode: PaneViewMode = .details
 
     var selectedURLs: Set<URL> = []
+    var scrollToSelectionGeneration: Int = 0
     var markedURLs: Set<URL> = []
     var calculatedFolderSizes: [URL: Int64] = [:] {
         didSet { cachedDisplayedItems = nil }
@@ -141,10 +142,10 @@ final class TabState: Identifiable {
             ?? allItems.first(where: { $0.url == firstURL })
     }
 
-    init(initialURL: URL, showHidden: Bool) {
+    init(initialURL: URL, showHidden: Bool, preferredSelection: URL? = nil) {
         self.currentURL = initialURL.standardizedFileURL
         self.currentShowHidden = showHidden
-        reload(showHidden: showHidden, selectFirstIfEmpty: true)
+        reload(showHidden: showHidden, preferredSelection: preferredSelection, selectFirstIfEmpty: true)
         setupWatcher()
     }
 

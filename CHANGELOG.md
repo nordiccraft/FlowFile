@@ -2,6 +2,13 @@
 
 Alle viktige nyheter, forbedringer og feilrettinger i FlowFile dokumenteres her og vises direkte i oppdateringsvinduet i appen.
 
+## [1.0.6] - 2026-11-14
+
+- Nytt valg for å sette FlowFile som standard filutforsker i macOS – tilgjengelig med ett klikk både i Innstillinger (`⌘,`) og som et frivillig steg i Velkomstguiden, inkludert enkel tilbakestilling til Finder.
+- Full støtte for «Vis i Finder» fra nettlesere, Spotlight og Terminal (`open` / `open -R`): åpner foreldremappen og markerer + scroller direkte til den aktuelle filen eller `.app`-pakken.
+- «Smart ny fane» ved ekstern åpning: bevarer mappen du jobber i ved å åpne i ny fane, men gjenbruker eksisterende fane automatisk hvis mappen allerede er åpen (kan byttes til «Aktiv fane» i Innstillinger).
+- «Vis i Finder» inne i selve FlowFile åpner fortsatt ekte macOS Finder uten å gå i løkke tilbake til FlowFile.
+
 ## [1.0.5] - 2026-11-13
 
 - Ny direktemotor for oppdatering og omstart: bytter ut app-pakken atomisk før avslutning og starter ny utgave direkte via macOS LaunchServices, uten eksterne hjelpeskript som kan stoppes i bakgrunnen.

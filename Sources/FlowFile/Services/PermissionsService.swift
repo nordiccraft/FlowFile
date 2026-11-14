@@ -39,6 +39,6 @@ enum PermissionsService {
     /// Reveals the running FlowFile.app bundle in Finder so the user can drag it into System Settings if needed.
     static func revealRunningAppInFinder() {
         let bundleURL = Bundle.main.bundleURL
-        NSWorkspace.shared.activateFileViewerSelecting([bundleURL])
+        DefaultFileBrowserService.revealExplicitlyInAppleFinder([bundleURL])
     }
 }

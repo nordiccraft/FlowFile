@@ -181,6 +181,67 @@ struct InteractiveTourOverlay: View {
                     .fill(Color.primary.opacity(0.05))
             )
 
+            // Optional Default File Browser choice
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 7) {
+                    LucideIcon(kind: workspace.isDefaultFileBrowser ? .checkCircle : .columns2, size: 15)
+                        .foregroundStyle(workspace.isDefaultFileBrowser ? .green : Color.accentColor)
+                    Text(workspace.tr(
+                        "3. Valgfritt: Standard filutforsker i macOS",
+                        "3. Optional: Default File Browser in macOS"
+                    ))
+                    .font(.system(size: 13, weight: .semibold))
+                }
+
+                Text(workspace.isDefaultFileBrowser
+                     ? workspace.tr(
+                         "FlowFile er satt som standard for mapper og «Vis i Finder». Du kan bytte tilbake til Finder når som helst.",
+                         "FlowFile is set as the default for folders and 'Show in Finder'. You can switch back to Finder anytime."
+                     )
+                     : workspace.tr(
+                         "Vil du at «Vis i Finder» fra nettlesere og Spotlight skal åpne i FlowFile i stedet for Finder? Kan endres når som helst under Innstillinger (⌘,).",
+                         "Want 'Show in Finder' from browsers and Spotlight to open in FlowFile instead of Finder? You can change this anytime in Settings (⌘,)."
+                     ))
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: 8) {
+                    if !workspace.isDefaultFileBrowser {
+                        Button {
+                            Task { await workspace.setAsDefaultFileBrowser() }
+                        } label: {
+                            HStack(spacing: 6) {
+                                LucideIcon(kind: .sparkles, size: 13)
+                                Text(workspace.tr("Sett FlowFile som standard (valgfritt)", "Set FlowFile as Default (optional)"))
+                                    .font(.system(size: 12))
+                            }
+                        }
+                        .buttonStyle(.glass)
+                        .controlSize(.small)
+                        .disabled(workspace.isUpdatingDefaultBrowser)
+                    } else {
+                        Button {
+                            Task { await workspace.resetDefaultFileBrowserToFinder() }
+                        } label: {
+                            HStack(spacing: 6) {
+                                LucideIcon(kind: .refreshCw, size: 13)
+                                Text(workspace.tr("Tilbakestill til macOS Finder", "Restore macOS Finder"))
+                                    .font(.system(size: 12))
+                            }
+                        }
+                        .buttonStyle(.glass)
+                        .controlSize(.small)
+                        .disabled(workspace.isUpdatingDefaultBrowser)
+                    }
+                }
+            }
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color.primary.opacity(0.05))
+            )
+
             HStack {
                 Button(workspace.tr("Hopp over omvisning", "Skip Tour")) {
                     workspace.finishInteractiveTour()

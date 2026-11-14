@@ -176,6 +176,7 @@ struct AppKitFileTableView: NSViewRepresentable {
         var lastDiffStatuses: [URL: FileDiffStatus] = [:]
         var lastCutSet: Set<URL> = []
         var lastActivePaneID: PaneID? = nil
+        var lastScrollGeneration: Int = 0
         var isSyncingSelection: Bool = false
 
         init(pane: PaneState, tab: TabState, workspace: WorkspaceState) {
@@ -219,6 +220,9 @@ struct AppKitFileTableView: NSViewRepresentable {
                 desiredIndexes.add(idx)
             }
 
+            let forceScroll = lastScrollGeneration != tab.scrollToSelectionGeneration
+            lastScrollGeneration = tab.scrollToSelectionGeneration
+
             if tableView.selectedRowIndexes != (desiredIndexes as IndexSet) {
                 isSyncingSelection = true
                 tableView.selectRowIndexes(desiredIndexes as IndexSet, byExtendingSelection: false)
@@ -226,6 +230,11 @@ struct AppKitFileTableView: NSViewRepresentable {
                     tableView.scrollRowToVisible(firstIdx)
                 }
                 isSyncingSelection = false
+            } else if forceScroll,
+                      let firstIdx = desiredIndexes.firstIndex as Int?,
+                      firstIdx != NSNotFound,
+                      firstIdx < items.count {
+                tableView.scrollRowToVisible(firstIdx)
             }
         }
 
@@ -671,9 +680,13 @@ struct AppKitFileTableView: NSViewRepresentable {
         @objc private func ctxRevealInFinder() {
             let urls = tab.effectiveActionURLs
             if !urls.isEmpty {
-                NSWorkspace.shared.activateFileViewerSelecting(urls)
+                DefaultFileBrowserService.revealExplicitlyInAppleFinder(urls)
             } else {
-                NSWorkspace.shared.open(tab.currentURL)
+                NSWorkspace.shared.open(
+                    [tab.currentURL],
+                    withApplicationAt: DefaultFileBrowserService.finderAppURL,
+                    configuration: NSWorkspace.OpenConfiguration()
+                )
             }
         }
 
