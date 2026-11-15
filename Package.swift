@@ -21,7 +21,8 @@ let package = Package(
                 .linkedFramework("UniformTypeIdentifiers"),
                 .linkedFramework("Network"),
                 .linkedFramework("CoreImage"),
-                .linkedFramework("ImageIO")
+                .linkedFramework("ImageIO"),
+                .linkedFramework("PDFKit")
             ]
         ),
         .testTarget(

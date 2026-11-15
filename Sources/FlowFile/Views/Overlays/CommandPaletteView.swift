@@ -20,6 +20,100 @@ struct CommandPaletteView: View {
 
         // Actions
         list.append(PaletteEntry(
+            id: "cmd.deepsearch",
+            title: workspace.tr("Dypsøk i undermapper og filinnhold", "Deep Subfolder & File-Content Search"),
+            subtitle: workspace.tr("Søk på navn, tekst inni filer, størrelse, dato og fargetagg", "Search by name, text content, size, date & color tag"),
+            icon: "doc.text.magnifyingglass",
+            shortcut: "⇧⌘F"
+        ) {
+            workspace.openDeepSearch()
+        })
+
+        list.append(PaletteEntry(
+            id: "cmd.flatview",
+            title: workspace.activeTab.isFlatBranchView
+                ? workspace.tr("Avslutt flat undermappe-visning", "Exit Flat Subfolder View")
+                : workspace.tr("Flat visning – samle alle filer fra undermapper", "Flat Subfolder View – flatten all nested files"),
+            subtitle: workspace.activeTab.currentURL.path,
+            icon: "square.stack.3d.down.right.fill",
+            shortcut: "⌥⌘B"
+        ) {
+            workspace.toggleFlatViewInActiveTab()
+        })
+
+        list.append(PaletteEntry(
+            id: "cmd.diskspace",
+            title: workspace.tr("Diskplass-analyse i aktiv mappe", "Disk Space Analyzer in Active Folder"),
+            subtitle: workspace.tr("Se hvilke undermapper og store filer som bruker mest plass", "Inspect which subfolders and large files consume the most space"),
+            icon: "chart.pie.fill",
+            shortcut: "⌥⌘D"
+        ) {
+            workspace.openDiskSpaceAnalyzer()
+        })
+
+        list.append(PaletteEntry(
+            id: "cmd.duplicates",
+            title: workspace.tr("Finn duplikatfiler (SHA-256)", "Find Duplicate Files (SHA-256)"),
+            subtitle: workspace.tr("Skann og fjern identiske kopier trygt til Papirkurven", "Scan and safely move identical copies to Trash"),
+            icon: "doc.on.doc.fill",
+            shortcut: nil
+        ) {
+            workspace.openDuplicateFinder()
+        })
+
+        list.append(PaletteEntry(
+            id: "cmd.foldersync",
+            title: workspace.tr("Synkroniser venstre og høyre mappe", "Synchronize Left and Right Folders"),
+            subtitle: workspace.tr("Oppdater én vei, to-veis eller speil med forhåndsvisning", "One-way update, two-way newest, or mirror with preview"),
+            icon: "arrow.triangle.2.circlepath.circle.fill",
+            shortcut: "⌥⇧⌘K"
+        ) {
+            workspace.openFolderSync()
+        })
+
+        list.append(PaletteEntry(
+            id: "cmd.convertimages",
+            title: workspace.tr("Konverter / skaler valgte bilder", "Convert / Resize Selected Images"),
+            subtitle: workspace.tr("Konverter HEIC, PNG, TIFF, JPG til JPEG/PNG med valgfri skalering", "Convert HEIC, PNG, TIFF, JPG to JPEG/PNG with optional resize"),
+            icon: "photo.stack.fill",
+            shortcut: nil
+        ) {
+            workspace.openImageConverter()
+        })
+
+        list.append(PaletteEntry(
+            id: "cmd.mergepdf",
+            title: workspace.tr("Slå sammen valgte PDF-er og bilder til én PDF", "Merge Selected PDFs & Images into Single PDF"),
+            subtitle: workspace.activeTab.currentURL.path,
+            icon: "doc.richtext.fill",
+            shortcut: nil
+        ) {
+            workspace.mergeSelectedToPDF()
+        })
+
+        list.append(PaletteEntry(
+            id: "cmd.saveworkspace",
+            title: workspace.tr("Lagre gjeldende arbeidsområde", "Save Current Workspace"),
+            subtitle: workspace.tr("Lagre åpne faner og paneloppsett under eget navn", "Save open tabs and pane layout under a custom name"),
+            icon: "square.stack.3d.up.fill",
+            shortcut: "⌥⌘S"
+        ) {
+            workspace.isSaveWorkspaceSheetVisible = true
+        })
+
+        for saved in workspace.savedWorkspaces {
+            list.append(PaletteEntry(
+                id: "ws.\(saved.id.uuidString)",
+                title: "\(workspace.tr("Arbeidsområde", "Workspace")): \(saved.name)",
+                subtitle: saved.summaryLabel,
+                icon: saved.snapshot.isDualPane ? "rectangle.split.2x1.fill" : "rectangle.fill",
+                shortcut: nil
+            ) {
+                workspace.applySavedWorkspace(saved)
+            })
+        }
+
+        list.append(PaletteEntry(
             id: "cmd.sharehub",
             title: "Smart Delingssenter – Del valgte filer/mapper",
             subtitle: "E-post/Outlook, passord-ZIP, Teams/Slack, OneDrive/Dropbox & Wi-Fi QR-kode",
@@ -93,8 +187,10 @@ struct CommandPaletteView: View {
 
         list.append(PaletteEntry(
             id: "cmd.dualpane",
-            title: workspace.isDualPane ? "Bytt til 1-Panel (Windows Explorer-modus)" : "Bytt til Dual-Pane (Total Commander-modus)",
-            subtitle: "Veksle mellom ett og to filpaneler",
+            title: workspace.isDualPane
+                ? workspace.tr("Bytt til enkeltpanel", "Switch to Single Pane")
+                : workspace.tr("Bytt til topanelsvisning", "Switch to Dual-Pane"),
+            subtitle: workspace.tr("Veksle mellom ett og to filpaneler", "Toggle between one and two file panes"),
             icon: "rectangle.split.2x1",
             shortcut: "⌘D"
         ) {

@@ -100,7 +100,7 @@ struct MainWindowView: View {
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
 
-                // Bottom Liquid Glass Status Bar + Total Commander F3–F8 Bar
+                // Bottom Liquid Glass Status Bar + F3–F8 Quick Action Bar
                 StatusAndFKeyBarView(workspace: workspace)
                     .padding(.horizontal, 10)
                     .padding(.bottom, 8)
@@ -144,6 +144,27 @@ struct MainWindowView: View {
                 workspace: workspace,
                 targetItems: workspace.shareTargetItems
             )
+        }
+        .sheet(isPresented: $workspace.isDeepSearchVisible) {
+            DeepSearchSheetView(workspace: workspace)
+        }
+        .sheet(isPresented: $workspace.isTaggedFilesSheetVisible) {
+            TaggedFilesSheetView(workspace: workspace)
+        }
+        .sheet(isPresented: $workspace.isSaveWorkspaceSheetVisible) {
+            SaveWorkspaceSheetView(workspace: workspace)
+        }
+        .sheet(isPresented: $workspace.isDiskSpaceVisible) {
+            DiskSpaceSheetView(workspace: workspace)
+        }
+        .sheet(isPresented: $workspace.isFolderSyncVisible) {
+            FolderSyncSheetView(workspace: workspace)
+        }
+        .sheet(isPresented: $workspace.isDuplicateFinderVisible) {
+            DuplicateFinderSheetView(workspace: workspace)
+        }
+        .sheet(isPresented: $workspace.isImageConvertVisible) {
+            ImageConvertSheetView(workspace: workspace)
         }
         .alert(
             workspace.tr("Handling kunne ikke utføres", "Action Could Not Be Completed"),

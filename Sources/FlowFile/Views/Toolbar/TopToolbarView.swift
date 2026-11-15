@@ -14,7 +14,7 @@ struct TopToolbarView: View {
     var body: some View {
         GlassEffectContainer(spacing: 8) {
             VStack(spacing: 8) {
-                // Row 1: Windows 11 Explorer-inspired Action Bar + Mode Toggles
+                // Row 1: Primary File Action Bar + Layout & Tool Controls
                 HStack(spacing: 8) {
                     // Create group
                     HStack(spacing: 4) {
@@ -41,7 +41,7 @@ struct TopToolbarView: View {
 
                     Divider().frame(height: 18)
 
-                    // Clipboard & File actions (Windows 11 ribbon style)
+                    // Clipboard & File actions
                     HStack(spacing: 4) {
                         toolbarIconButton("scissors", title: workspace.tr("Klipp ut", "Cut"), help: workspace.tr("Klipp ut valgte filer (Cmd+X)", "Cut selected files (Cmd+X)"), disabled: !hasSelection) {
                             workspace.cutSelected()
@@ -82,6 +82,45 @@ struct TopToolbarView: View {
 
                     // View & Power-user toggles
                     HStack(spacing: 6) {
+                        Menu {
+                            Button(workspace.tr("Dypsøk i undermapper & filinnhold... (⇧⌘F)", "Deep Search in Subfolders & Content... (⇧⌘F)"), systemImage: "magnifyingglass") {
+                                workspace.openDeepSearch()
+                            }
+                            Button(workspace.activeTab.isFlatBranchView
+                                   ? workspace.tr("Avslutt flat undermappe-visning (⌥⌘B)", "Exit Flat Subfolder View (⌥⌘B)")
+                                   : workspace.tr("Flat visning av alle undermapper (⌥⌘B)", "Flat Subfolder View (⌥⌘B)"),
+                                   systemImage: "square.stack.3d.down.right") {
+                                workspace.toggleFlatViewInActiveTab()
+                            }
+                            Divider()
+                            Button(workspace.tr("Diskplass-analyse... (⌥⌘D)", "Disk Space Analyzer... (⌥⌘D)"), systemImage: "chart.pie") {
+                                workspace.openDiskSpaceAnalyzer()
+                            }
+                            Button(workspace.tr("Finn duplikatfiler (SHA-256)...", "Find Duplicate Files (SHA-256)..."), systemImage: "doc.on.doc") {
+                                workspace.openDuplicateFinder()
+                            }
+                            Button(workspace.tr("Synkroniser mapper... (⌥⇧⌘K)", "Synchronize Folders... (⌥⇧⌘K)"), systemImage: "arrow.triangle.2.circlepath") {
+                                workspace.openFolderSync()
+                            }
+                            Divider()
+                            Button(workspace.tr("Konverter / skaler valgte bilder...", "Convert / Resize Selected Images..."), systemImage: "photo.stack") {
+                                workspace.openImageConverter()
+                            }
+                            Button(workspace.tr("Slå sammen valgte til én PDF", "Merge Selected into Single PDF"), systemImage: "doc.richtext") {
+                                workspace.mergeSelectedToPDF()
+                            }
+                            Divider()
+                            Button(workspace.tr("Lagre gjeldende arbeidsområde... (⌥⌘S)", "Save Current Workspace... (⌥⌘S)"), systemImage: "square.stack.3d.up") {
+                                workspace.isSaveWorkspaceSheetVisible = true
+                            }
+                        } label: {
+                            Label(workspace.tr("Verktøy", "Tools"), systemImage: "wrench.and.screwdriver")
+                                .font(.system(size: 12))
+                        }
+                        .menuStyle(.button)
+                        .buttonStyle(.glass)
+                        .help(workspace.tr("Hurtigverktøy, dypsøk, diskplass, duplikater og synkronisering", "Quick tools, deep search, disk space, duplicates & folder sync"))
+
                         Button {
                             workspace.toggleDualPaneComparison()
                         } label: {
@@ -187,8 +226,8 @@ struct TopToolbarView: View {
                         .buttonStyle(.glass)
                         .tourTarget(.dualPaneButton)
                         .help(workspace.tr(
-                            "Bytt mellom Windows Explorer 1-panel og Total Commander Dual-Pane (Cmd+D)",
-                            "Switch between Windows Explorer 1-Pane and Total Commander Dual-Pane (Cmd+D)"
+                            "Bytt mellom enkeltpanel og topanelsvisning (Cmd+D)",
+                            "Switch between single-pane and dual-pane view (Cmd+D)"
                         ))
 
                         Button {
@@ -224,7 +263,7 @@ struct TopToolbarView: View {
                             .foregroundStyle(workspace.isSidebarVisible ? Color.accentColor : .primary)
                     }
                     .buttonStyle(.glass)
-                    .help(workspace.tr("Vis/skjul venstre Explorer-sidepanel (Cmd+B)", "Show/hide left Explorer sidebar (Cmd+B)"))
+                    .help(workspace.tr("Vis/skjul venstre sidepanel (Cmd+B)", "Show/hide left sidebar (Cmd+B)"))
 
                     HStack(spacing: 3) {
                         Button {
@@ -283,6 +322,14 @@ struct TopToolbarView: View {
                     }
                     .buttonStyle(.glass)
                     .help(workspace.tr("Lyn-filter i aktiv mappe (Cmd+F)", "Instant filter in active folder (Cmd+F)"))
+
+                    Button {
+                        workspace.openDeepSearch()
+                    } label: {
+                        Image(systemName: "doc.text.magnifyingglass")
+                    }
+                    .buttonStyle(.glass)
+                    .help(workspace.tr("Dypsøk i undermapper og filinnhold (⇧⌘F)", "Deep search in subfolders & file contents (⇧⌘F)"))
                 }
             }
             .padding(.horizontal, 12)

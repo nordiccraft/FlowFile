@@ -2,6 +2,18 @@
 
 Alle viktige nyheter, forbedringer og feilrettinger i FlowFile dokumenteres her og vises direkte i oppdateringsvinduet i appen.
 
+## [1.1.0] - 2026-11-15
+
+- **Dypsøk i undermapper og filinnhold (`⇧⌘F`):** Rekursivt søk på filnavn, tekstinnhold inni filer (med forhåndsvisning av trefflinje), filstørrelse, endringsdato og fargetagger.
+- **Automatisk fane-gjenoppretting & lagrede Arbeidsområder (`⌥⌘S`):** Husker åpne faner og enkelt-/topanelsoppsett automatisk ved omstart, og lar deg lagre navngitte arbeidsområder i sidepanelet og Command Palette (`⌘P`).
+- **macOS Fargetagger (`⌃1`–`⌃7`):** 100 % kompatible fargetagger som vises direkte på filradene, i kontekstmenyen, i infopanelet (`⌘I`) og i sidepanelet.
+- **Flat undermappe-visning (`⌥⌘B`):** Samler alle filer fra undermapper i én oversiktlig og sorterbar liste med tydelig visning av relativ undermappesti.
+- **Diskplass-analyse (`⌥⌘D`):** Visuell oversikt over hvilke undermapper og enkeltfiler som bruker mest plass, med direkte utforsking nedover i mappetreet.
+- **Mappe-synkronisering (`⌥⇧⌘K`):** Synkroniser venstre og høyre mappe (oppdater én vei, to-veis nyeste vinner, eller speilmodus) med full forhåndsvisning av planlagte filoperasjoner.
+- **Duplikat-finner (`SHA-256`):** Finner 100 % identiske duplikatfiler i én eller begge mapper og lar deg beholde nyeste eller eldste kopi med ett klikk.
+- **Innebygde hurtigverktøy:** Konverter og skaler bilder (`HEIC`, `PNG`, `TIFF`, `JPG` → `JPEG`/`PNG`), slå sammen valgte PDF-er og bilder til én samlet PDF, og beregn `SHA-256`-sjekksum i infopanelet.
+- **Rent og enhetlig begrepsbruk:** Oppdaterte menyer (*Verktøy*), knapper og ledetekster med egne norske og engelske termer uten referanser til andre tredjepartsprogrammer.
+
 ## [1.0.6] - 2026-11-14
 
 - Nytt valg for å sette FlowFile som standard filutforsker i macOS – tilgjengelig med ett klikk både i Innstillinger (`⌘,`) og som et frivillig steg i Velkomstguiden, inkludert enkel tilbakestilling til Finder.

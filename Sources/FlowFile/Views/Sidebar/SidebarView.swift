@@ -59,6 +59,117 @@ struct SidebarView: View {
                     }
                 }
 
+                // Section 1B: Lagrede arbeidsområder (Saved Workspaces)
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack {
+                        sectionHeader(workspace.tr("Arbeidsområder", "Workspaces"), icon: "square.stack.3d.up.fill")
+                        Spacer()
+                        Button {
+                            workspace.isSaveWorkspaceSheetVisible = true
+                        } label: {
+                            Image(systemName: "plus.circle")
+                                .font(.system(size: 11.5, weight: .semibold))
+                                .foregroundStyle(Color.accentColor)
+                        }
+                        .buttonStyle(.plain)
+                        .help(workspace.tr("Lagre gjeldende fane- og paneloppsett (⌥⌘S)", "Save current tab & pane layout (⌥⌘S)"))
+                    }
+
+                    if workspace.savedWorkspaces.isEmpty {
+                        Button {
+                            workspace.isSaveWorkspaceSheetVisible = true
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "plus")
+                                    .font(.system(size: 10, weight: .bold))
+                                Text(workspace.tr("Lagre nåværende oppsett...", "Save current layout..."))
+                                    .font(.system(size: 11.5))
+                            }
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        ForEach(workspace.savedWorkspaces) { saved in
+                            Button {
+                                workspace.applySavedWorkspace(saved)
+                            } label: {
+                                HStack(spacing: 7) {
+                                    Image(systemName: saved.snapshot.isDualPane ? "rectangle.split.2x1.fill" : "rectangle")
+                                        .font(.system(size: 11.5))
+                                        .foregroundStyle(Color.accentColor)
+                                        .frame(width: 18)
+
+                                    VStack(alignment: .leading, spacing: 0) {
+                                        Text(saved.name)
+                                            .font(.system(size: 12, weight: .medium))
+                                            .lineLimit(1)
+                                        Text(saved.summaryLabel)
+                                            .font(.system(size: 10))
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                        .fill(Color.primary.opacity(0.035))
+                                )
+                                .contentShape(RoundedRectangle(cornerRadius: 7))
+                            }
+                            .buttonStyle(.plain)
+                            .contextMenu {
+                                Button(workspace.tr("Åpne arbeidsområde", "Open Workspace")) {
+                                    workspace.applySavedWorkspace(saved)
+                                }
+                                Divider()
+                                Button(workspace.tr("Slett arbeidsområde", "Delete Workspace"), role: .destructive) {
+                                    workspace.deleteSavedWorkspace(id: saved.id)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Section 1C: macOS Fargetagger (Color Tags)
+                VStack(alignment: .leading, spacing: 6) {
+                    sectionHeader(workspace.tr("Fargetagger", "Color Tags"), icon: "tag.fill")
+
+                    HStack(spacing: 7) {
+                        ForEach(FinderColorTag.allCases) { tag in
+                            let isFilteredInTab = workspace.activeTab.activeColorTagFilter == tag
+                            Button {
+                                workspace.openTaggedFilesBrowser(for: tag)
+                            } label: {
+                                Circle()
+                                    .fill(tag.swiftUIColor)
+                                    .frame(width: 16, height: 16)
+                                    .overlay(
+                                        Circle()
+                                            .strokeBorder(isFilteredInTab ? Color.primary : Color.black.opacity(0.18), lineWidth: isFilteredInTab ? 2 : 0.8)
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                            .help(workspace.tr(
+                                "\(tag.title) – klikk for å finne merkede filer (høyreklikk for å filtrere aktiv mappe)",
+                                "\(tag.title) – click to browse tagged files (right-click to filter active folder)"
+                            ))
+                            .contextMenu {
+                                Button(workspace.tr("Finn alle filer med taggen «\(tag.title)»...", "Browse all '\(tag.title)' items...")) {
+                                    workspace.openTaggedFilesBrowser(for: tag)
+                                }
+                                Button(workspace.tr("Filtrer kun aktiv mappe på «\(tag.title)»", "Filter active folder by '\(tag.title)'")) {
+                                    workspace.activeTab.activeColorTagFilter = (workspace.activeTab.activeColorTagFilter == tag) ? nil : tag
+                                }
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                }
+
                 // Section 2: Skylagring (OneDrive, Dropbox, Google Drive, Box & iCloud Drive!)
                 if !workspace.cloudAccounts.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
@@ -177,7 +288,7 @@ struct SidebarView: View {
                     }
                 }
 
-                // Section 3: Ekte utvidbart Mappetre (Windows Explorer style!)
+                // Section 4: Utvidbart mappetre
                 VStack(alignment: .leading, spacing: 4) {
                     sectionHeader(workspace.tr("Mappetre", "Folder Tree"), icon: "list.bullet.indent")
 

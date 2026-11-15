@@ -364,8 +364,8 @@ struct InteractiveTourOverlay: View {
                     title: workspace.tr("Bytt mellom 1-Panel og Dual-Pane (⌘D)", "Switch Between 1-Pane and Dual-Pane (⌘D)")
                 )
                 Text(workspace.tr(
-                    "Bruk ett ryddig panel til vanlig som i Windows Explorer, og del vinduet i to side-om-side paneler som i Total Commander når du vil flytte og organisere mapper.",
-                    "Use 1 clean pane like Windows Explorer for everyday work, and split into 2 side-by-side panes like Total Commander whenever organizing folders."
+                    "Bruk ett oversiktlig panel til vanlig, og del vinduet i to side-om-side paneler når du vil sammenligne, flytte eller organisere mapper raskt.",
+                    "Use a clean single pane for everyday work, and split into two side-by-side panes whenever comparing, moving, or organizing folders."
                 ))
                 .font(.system(size: 12))
 

@@ -70,6 +70,23 @@ struct FileGridView: View {
                             tab.selectedURLs = [item.url]
                             workspace.promptRenameSelected()
                         }
+                        if !tab.isInsideArchive {
+                            Menu(workspace.tr("Fargetagger", "Color Tags")) {
+                                ForEach(FinderColorTag.allCases) { tag in
+                                    Button(tag.title) {
+                                        workspace.activePaneID = pane.id
+                                        tab.selectedURLs = [item.url]
+                                        workspace.toggleColorTagOnSelection(tag)
+                                    }
+                                }
+                                Divider()
+                                Button(workspace.tr("Fjern fargetagger", "Clear Color Tags")) {
+                                    workspace.activePaneID = pane.id
+                                    tab.selectedURLs = [item.url]
+                                    workspace.clearColorTagsOnSelection()
+                                }
+                            }
+                        }
                         Divider()
                         Button("Flytt til Papirkurv", role: .destructive) {
                             workspace.activePaneID = pane.id
@@ -140,12 +157,15 @@ struct FileGridCell: View {
                 }
             }
 
-            Text(item.name)
-                .font(.system(size: 11.5, weight: isSelected || isMarked ? .semibold : .regular))
-                .foregroundStyle(isMarked ? .orange : .primary)
-                .lineLimit(2)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: .infinity)
+            HStack(spacing: 4) {
+                ColorTagDotsView(tags: item.colorTags, dotSize: 7.5)
+                Text(item.name)
+                    .font(.system(size: 11.5, weight: isSelected || isMarked ? .semibold : .regular))
+                    .foregroundStyle(isMarked ? .orange : .primary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity)
 
             if !item.isNavigableFolder {
                 Text(item.formattedSize())

@@ -6,6 +6,9 @@ struct InspectorPaneView: View {
     @Bindable var workspace: WorkspaceState
     @State private var previewImage: NSImage? = nil
     @State private var isCalculatingSize: Bool = false
+    @State private var computedSHA256: String? = nil
+    @State private var isComputingSHA256: Bool = false
+    @State private var didCopySHA256: Bool = false
 
     private var activeTab: TabState {
         workspace.activeTab
@@ -58,6 +61,9 @@ struct InspectorPaneView: View {
                         workspace.triggerQuickLook()
                     }
                     .task(id: item.url) {
+                        computedSHA256 = nil
+                        isComputingSHA256 = false
+                        didCopySHA256 = false
                         await loadLargePreview(for: item)
                     }
 
@@ -125,6 +131,74 @@ struct InspectorPaneView: View {
                                     .font(.system(size: 10.5, design: .monospaced))
                                     .lineLimit(2)
                                     .textSelection(.enabled)
+                            }
+                        }
+
+                        if !activeTab.isInsideArchive {
+                            metadataRow(workspace.tr("Fargetagg", "Color Tag")) {
+                                HStack(spacing: 5) {
+                                    let activeTags = Set(item.colorTags)
+                                    ForEach(FinderColorTag.allCases) { tag in
+                                        Button {
+                                            workspace.toggleColorTagOnSelection(tag)
+                                        } label: {
+                                            Circle()
+                                                .fill(tag.swiftUIColor)
+                                                .frame(width: 13, height: 13)
+                                                .overlay(
+                                                    Circle()
+                                                        .strokeBorder(activeTags.contains(tag) ? Color.primary : Color.black.opacity(0.2), lineWidth: activeTags.contains(tag) ? 1.8 : 0.6)
+                                                )
+                                        }
+                                        .buttonStyle(.plain)
+                                        .help("\(tag.title) (⌃\(tag.shortcutDigit))")
+                                    }
+                                    if !item.colorTags.isEmpty {
+                                        Button {
+                                            workspace.clearColorTagsOnSelection()
+                                        } label: {
+                                            Image(systemName: "xmark.circle.fill")
+                                                .font(.system(size: 12))
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        .buttonStyle(.plain)
+                                        .help(workspace.tr("Fjern fargetagger", "Clear color tags"))
+                                    }
+                                }
+                            }
+                        }
+
+                        if !item.isNavigableFolder && !activeTab.isInsideArchive {
+                            metadataRow("SHA-256") {
+                                if let sha = computedSHA256 {
+                                    VStack(alignment: .trailing, spacing: 4) {
+                                        Text(sha)
+                                            .font(.system(size: 10, design: .monospaced))
+                                            .foregroundStyle(.secondary)
+                                            .multilineTextAlignment(.trailing)
+                                            .textSelection(.enabled)
+                                        Button {
+                                            NSPasteboard.general.clearContents()
+                                            NSPasteboard.general.setString(sha, forType: .string)
+                                            didCopySHA256 = true
+                                        } label: {
+                                            Label(
+                                                didCopySHA256 ? workspace.tr("Kopiert", "Copied") : workspace.tr("Kopier hash", "Copy Hash"),
+                                                systemImage: didCopySHA256 ? "checkmark" : "doc.on.doc"
+                                            )
+                                            .font(.system(size: 10.5, weight: .medium))
+                                        }
+                                        .buttonStyle(.link)
+                                    }
+                                } else if isComputingSHA256 {
+                                    ProgressView().controlSize(.mini)
+                                } else {
+                                    Button(workspace.tr("Beregn SHA-256", "Compute SHA-256")) {
+                                        computeSHA256(for: item.url)
+                                    }
+                                    .buttonStyle(.link)
+                                    .font(.system(size: 11.5))
+                                }
                             }
                         }
                     }
@@ -212,6 +286,18 @@ struct InspectorPaneView: View {
             let size = await FileSystemService.calculateFolderSize(at: folderURL)
             activeTab.calculatedFolderSizes[folderURL] = size
             isCalculatingSize = false
+        }
+    }
+
+    private func computeSHA256(for fileURL: URL) {
+        isComputingSHA256 = true
+        didCopySHA256 = false
+        Task { @MainActor in
+            if let digest = try? await QuickFileToolsService.computeSHA256(for: fileURL),
+               inspectedItem?.url == fileURL {
+                computedSHA256 = digest
+            }
+            isComputingSHA256 = false
         }
     }
 }

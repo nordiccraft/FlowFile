@@ -2,7 +2,7 @@
 
 [![Build & Verify](https://github.com/nordiccraft/FlowFile/actions/workflows/release.yml/badge.svg)](https://github.com/nordiccraft/FlowFile/actions/workflows/release.yml)
 
-**FlowFile** er en rask, native filutforsker for macOS 26 – bygget i ren Swift (`SwiftUI` + `AppKit`) som en kombinasjon av **Windows 11 File Explorer** og **Total Commander**, med macOS **Liquid Glass**.
+**FlowFile** er en rask, native filutforsker for macOS 26 – bygget i ren Swift (`SwiftUI` + `AppKit`) med enkeltpanel, topanelsvisning, faner, innebygde filverktøy og macOS **Liquid Glass**.
 
 ---
 
@@ -45,7 +45,7 @@ FlowFile er utviklet som et uavhengig prosjekt uten kommersielt Apple Developer-
 2. **Offentlig kompilering via GitHub Actions:**  
    Utgivelsene under **[Releases](https://github.com/nordiccraft/FlowFile/releases/latest)** og [`Casks/flowfile.rb`](Casks/flowfile.rb) bygges og oppdateres direkte fra kildekoden på GitHub sine egne servere via [`.github/workflows/release.yml`](.github/workflows/release.yml), med åpen byggelogg og tilhørende `SHA256SUMS.txt`.
 3. **Standard macOS-rettigheter per mappe:**  
-   FlowFile krever ikke full tilgang ved installasjon. macOS spør kun om vanlig mappetillatelse første gang du selv navigerer inn i mapper som *Skrivebord*, *Dokumenter* eller *Nedlastinger* (*Full disktilgang* i Systeminnstillinger er helt valgfritt for de som ønsker å slippe enkeltspørsmål per mappe, slik som i ForkLift og Path Finder).
+   FlowFile krever ikke full tilgang ved installasjon. macOS spør kun om vanlig mappetillatelse første gang du selv navigerer inn i mapper som *Skrivebord*, *Dokumenter* eller *Nedlastinger* (*Full disktilgang* i Systeminnstillinger er helt valgfritt for de som ønsker å slippe enkeltspørsmål per mappe).
 4. **Oppdateringer og integritetskontroll:**  
    Når du selv velger å oppdatere i appen (*FlowFile → Se etter oppdateringer...*), krever oppdatereren en gyldig `SHA256SUMS.txt` over HTTPS (avbryter ved manglende eller avvikende sjekksum), sjekker `CFBundleIdentifier` og `codesign --verify --deep --strict`, og erstatter app-pakken atomisk med automatisk tilbakerulling ved feil. *(Merk: så lenge byggene er ad-hoc-signert uten betalt Apple Developer ID-sertifikat, bygger autentisiteten på GitHub HTTPS/kontosikkerhet og åpne GitHub Actions-bygg – eller på den låste `sha256`-verdien i Homebrew Cask.)*
 
@@ -53,13 +53,17 @@ FlowFile er utviklet som et uavhengig prosjekt uten kommersielt Apple Developer-
 
 ## Hovedfunksjoner
 
-- **1-Panel Explorer & Dual-Pane Commander (`⌘D`):** Bytt sømløst mellom vanlig enkeltpanel og to-panels modus med egne faner (`⌘T`).
-- **Forutsigbar tastaturnavigasjon:** Mapper vises alltid øverst, filendelser er synlige, `Enter` åpner alltid valgt mappe/fil, `Backspace` går ett nivå opp, og `F2` endrer navn.
-- **Adresselinje med «Kopier sti» (`⌘L` / `⌥⌘C`):** Klikkbare brødsmuler kombinert med redigerbar filsti, pluss direkte åpning av mappe-snarveier/alias inne i FlowFile.
-- **Mappesammenligning (`⇧⌘K`):** Sammenlign to mapper side om side med tydelig merking av nye, endrede og unike filer – og avslutt enkelt med ett klikk eller `Esc`.
+- **Enkeltpanel & Topanelsvisning (`⌘D`):** Bytt sømløst mellom oversiktlig enkeltpanel og side-om-side topanelsvisning med faner (`⌘T`), automatisk fane-gjenoppretting og lagrede **Arbeidsområder** (`⌥⌘S`).
+- **Forutsigbar tastaturnavigasjon:** Mapper vises alltid samlet øverst, filendelser er synlige, `Enter` åpner alltid valgt mappe/fil, `Backspace` går ett nivå opp, og `F2` endrer navn.
+- **Dypsøk (`⇧⌘F`) & Flat undermappe-visning (`⌥⌘B`):** Søk rekursivt på filnavn, tekstinnhold inni filer, filstørrelse og endringsdato – eller flat ut alle undermapper i én samlet tabell.
+- **macOS Fargetagger (`⌃1`–`⌃7`):** 100 % kompatible fargetagger som synkroniseres direkte med macOS og kan filtreres fra sidepanelet.
+- **Mappesammenligning (`⇧⌘K`) & Synkronisering (`⌥⇧⌘K`):** Sammenlign og synkroniser mapper én vei, to-veis eller i speilmodus med full forhåndsvisning.
+- **Diskplass-analyse (`⌥⌘D`) & Duplikat-finner:** Se visuelt hvilke undermapper og store filer som bruker mest diskplass, og finn identiske duplikatfiler verifisert med `SHA-256`.
+- **Innebygde hurtigverktøy:** Konverter og skaler bilder (`HEIC`, `PNG`, `TIFF`, `JPG`), slå sammen PDF-er og bilder til én PDF, og beregn `SHA-256`-sjekksum i infopanelet (`⌘I`).
 - **Skylagring i sidepanelet:** Automatisk gjenkjenning av **OneDrive**, **Dropbox**, **Google Drive**, **Box** og **iCloud Drive**, inkludert synkroniseringsstatus og *Frigjør lokal plass* på høyreklikk.
 - **Drop-hylle (`⌘J`) & Masse-omdøping (`⌘M`):** Samle filer fra ulike mapper før du kopierer/flytter alt samlet, eller gi nytt navn til mange filer samtidig med forhåndsvisning og angreknapp.
-- **Smart Delingssenter (`⇧⌘S`):** Lag Windows-rene `.zip`-arkiver (uten `.DS_Store` og `__MACOSX`), konverter `.HEIC` til `.JPG`, eller del filer lokalt på eget nettverk med midlertidig **Wi-Fi QR-kode**.
+- **Smart Delingssenter (`⇧⌘S`):** Lag rene `.zip`-arkiver (uten `.DS_Store` og `__MACOSX`), konverter `.HEIC` til `.JPG`, eller del filer lokalt på eget nettverk med midlertidig **Wi-Fi QR-kode**.
+- **Valgfri standard filutforsker i macOS:** Kan settes som standard for *«Vis i Finder»* fra nettlesere, Spotlight og Terminal under Innstillinger (`⌘,`), med ett-klikks tilbakestilling til Finder.
 - **Språkstøtte:** Norsk og engelsk brukergrensesnitt (følger macOS automatisk eller velges i Innstillinger `⌘,`).
 
 ---

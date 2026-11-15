@@ -64,6 +64,7 @@ struct FilePaneView: View {
                                 .onTapGesture {
                                     workspace.activePaneID = pane.id
                                     pane.activeTabID = tab.id
+                                    workspace.persistCurrentTabSession()
                                 }
                             }
                         }
@@ -99,7 +100,7 @@ struct FilePaneView: View {
                     }
                 }
 
-                // In Dual-Pane mode, show each pane's full path right under its tabs (Total Commander style!)
+                // In Dual-Pane mode, show each pane's full path right under its tabs
                 if workspace.isDualPane {
                     HStack(spacing: 6) {
                         Button {
@@ -217,6 +218,21 @@ struct FilePaneView: View {
                     Spacer()
 
                     Button {
+                        workspace.openFolderSync()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                                .font(.system(size: 10.5, weight: .bold))
+                            Text(workspace.tr("Synkroniser...", "Synchronize..."))
+                                .font(.system(size: 11, weight: .semibold))
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Capsule().fill(Color.primary.opacity(0.09)))
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
                         workspace.clearDualPaneComparison()
                     } label: {
                         HStack(spacing: 4) {
@@ -242,6 +258,55 @@ struct FilePaneView: View {
                 } else {
                     banner
                 }
+            }
+
+            // Flat Subfolder View banner (⌥⌘B)
+            if activeTab.isFlatBranchView {
+                HStack(spacing: 8) {
+                    Image(systemName: "square.stack.3d.down.right.fill")
+                        .foregroundStyle(Color.accentColor)
+                    Text(workspace.tr(
+                        "Flat visning aktiv (\(activeTab.displayedItems.count) filer fra alle undermapper)",
+                        "Flat view active (\(activeTab.displayedItems.count) files from all subfolders)"
+                    ))
+                    .font(.system(size: 11.5, weight: .semibold))
+
+                    Spacer()
+
+                    Button(workspace.tr("Avslutt flat visning", "Exit Flat View")) {
+                        activeTab.toggleFlatBranchView(showHidden: workspace.showHiddenFiles)
+                    }
+                    .font(.system(size: 11))
+                    .buttonStyle(.glass)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(Color.accentColor.opacity(0.10))
+            }
+
+            // Active Color Tag Filter banner
+            if let tagFilter = activeTab.activeColorTagFilter {
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(tagFilter.swiftUIColor)
+                        .frame(width: 9, height: 9)
+                    Text(workspace.tr(
+                        "Filtrert på fargetagg: \(tagFilter.title) (\(activeTab.displayedItems.count))",
+                        "Filtered by color tag: \(tagFilter.title) (\(activeTab.displayedItems.count))"
+                    ))
+                    .font(.system(size: 11.5, weight: .semibold))
+
+                    Spacer()
+
+                    Button(workspace.tr("Vis alle", "Show All")) {
+                        activeTab.activeColorTagFilter = nil
+                    }
+                    .font(.system(size: 11))
+                    .buttonStyle(.glass)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(tagFilter.swiftUIColor.opacity(0.12))
             }
 
             // Instant Filter Bar (appears when typing or pressing Cmd+F)

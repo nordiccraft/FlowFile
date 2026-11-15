@@ -251,7 +251,7 @@ struct AddressBarView: View {
         isEditing = true
         DispatchQueue.main.async {
             isTextFieldFocused = true
-            // Automatically select entire path text just like Windows File Explorer!
+            // Automatically select entire path text when entering edit mode
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) {
                 NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil)
             }

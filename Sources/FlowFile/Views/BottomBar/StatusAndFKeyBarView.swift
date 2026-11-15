@@ -40,7 +40,7 @@ struct StatusAndFKeyBarView: View {
     var body: some View {
         GlassEffectContainer(spacing: 6) {
             VStack(spacing: 6) {
-                // Total Commander F3–F8 Bar (shown automatically in Dual-Pane, or always if enabled in Settings)
+                // F3–F8 Quick Action Bar (shown automatically in Dual-Pane, or always if enabled in Settings)
                 if workspace.isDualPane || workspace.showFKeyBarAlways {
                     HStack(spacing: 6) {
                         fKeyButton("F3", title: "Quick Look") {

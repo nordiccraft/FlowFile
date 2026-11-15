@@ -19,7 +19,10 @@ enum FileSystemError: LocalizedError {
 }
 
 enum FileSystemService {
-    private static let resourceKeys: [URLResourceKey] = [
+    /// Keys safe to pass to `includingPropertiesForKeys:` (`getattrlistbulk`).
+    /// Note: `.tagNamesKey` must NOT be passed to `includingPropertiesForKeys:` on macOS 26 because
+    /// `CFURLEnumerator` caches it as `nil` instead of reading the Finder tag xattr.
+    private static let prefetchKeys: [URLResourceKey] = [
         .isDirectoryKey,
         .isPackageKey,
         .isSymbolicLinkKey,
@@ -29,11 +32,13 @@ enum FileSystemService {
         .totalFileAllocatedSizeKey,
         .contentModificationDateKey,
         .creationDateKey,
-        .localizedTypeDescriptionKey,
+        .labelNumberKey,
         .ubiquitousItemDownloadingStatusKey,
         .ubiquitousItemIsDownloadingKey,
         .ubiquitousItemIsUploadingKey
     ]
+
+    private static let readKeySet: Set<URLResourceKey> = Set(prefetchKeys + [.tagNamesKey])
 
     static func listDirectory(at directoryURL: URL, showHidden: Bool) throws -> [FileItem] {
         let fm = FileManager.default
@@ -42,13 +47,12 @@ enum FileSystemService {
             options.insert(.skipsHiddenFiles)
         }
 
-        let keySet = Set(resourceKeys)
         let insideCloud = CloudStorageService.isInsideAnyCloudFolder(directoryURL)
         let urls: [URL]
         do {
             urls = try fm.contentsOfDirectory(
                 at: directoryURL,
-                includingPropertiesForKeys: resourceKeys,
+                includingPropertiesForKeys: prefetchKeys,
                 options: options
             )
         } catch {
@@ -63,14 +67,14 @@ enum FileSystemService {
             if !showHidden && name.hasPrefix(".") {
                 continue
             }
-            let values = try? url.resourceValues(forKeys: keySet)
+            let values = try? url.resourceValues(forKeys: readKeySet)
             items.append(FileItem(url: url, resourceValues: values, insideCloudRoot: insideCloud))
         }
 
         return items
     }
 
-    /// Windows Explorer / Total Commander rule: Navigable folders ALWAYS stay at the top,
+    /// Navigable folders always stay grouped at the top,
     /// regardless of sort column or ascending/descending direction.
     static func sortItems(
         _ items: [FileItem],

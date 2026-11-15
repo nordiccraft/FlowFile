@@ -38,6 +38,7 @@ final class PaneState: Identifiable {
     let id: PaneID
     var tabs: [TabState]
     var activeTabID: UUID
+    @ObservationIgnored var onSessionMutated: (() -> Void)? = nil
 
     var activeTab: TabState {
         if let found = tabs.first(where: { $0.id == activeTabID }) {
@@ -58,6 +59,7 @@ final class PaneState: Identifiable {
         let tab = TabState(initialURL: target, showHidden: showHidden, preferredSelection: preferredSelection)
         tabs.append(tab)
         activeTabID = tab.id
+        onSessionMutated?()
     }
 
     func closeTab(id tabID: UUID, showHidden: Bool) {
@@ -68,6 +70,15 @@ final class PaneState: Identifiable {
             let safeIdx = min(idx, tabs.count - 1)
             activeTabID = tabs[safeIdx].id
         }
+        onSessionMutated?()
+    }
+
+    func replaceTabs(with urls: [URL], activeIndex: Int, showHidden: Bool) {
+        let safeURLs = urls.isEmpty ? [FileManager.default.homeDirectoryForCurrentUser] : urls
+        let rebuilt = safeURLs.map { TabState(initialURL: $0, showHidden: showHidden) }
+        tabs = rebuilt
+        let clamped = min(max(0, activeIndex), rebuilt.count - 1)
+        activeTabID = rebuilt[clamped].id
     }
 }
 
@@ -162,6 +173,22 @@ final class WorkspaceState {
     var isShareHubVisible: Bool = false
     var shareTargetItems: [FileItem] = []
 
+    // v1.1 Power Tools & Saved Workspaces
+    var savedWorkspaces: [SavedWorkspace] = [] {
+        didSet { TabSessionPersistence.saveWorkspaces(savedWorkspaces) }
+    }
+    var isDeepSearchVisible: Bool = false
+    var isTaggedFilesSheetVisible: Bool = false
+    var selectedSidebarColorTag: FinderColorTag = .red
+    var isSaveWorkspaceSheetVisible: Bool = false
+    var isDiskSpaceVisible: Bool = false
+    var isFolderSyncVisible: Bool = false
+    var isDuplicateFinderVisible: Bool = false
+    var isImageConvertVisible: Bool = false
+    var imageConvertTargetURLs: [URL] = []
+    private var wasRestoredFromSavedSession: Bool = false
+    private var suppressSessionPersist: Bool = false
+
     var clipboardURLs: [URL] = []
     var clipboardOperation: ClipboardOperation? = nil
     private var clipboardChangeCount: Int = -1
@@ -224,10 +251,26 @@ final class WorkspaceState {
         refreshStandardFavoriteTitles()
         refreshVolumesAndTree()
         recordRecentFolder(homeURL)
+        self.savedWorkspaces = TabSessionPersistence.loadWorkspaces()
 
-        if !UserDefaults.standard.bool(forKey: Self.onboardingDefaultsKey) {
+        let hasCompletedOnboarding = UserDefaults.standard.bool(forKey: Self.onboardingDefaultsKey)
+        if !hasCompletedOnboarding {
             self.tour.isActive = true
             self.tour.currentStep = .welcomeSetup
+        } else if let savedSession = TabSessionPersistence.loadLastSession() {
+            applySessionSnapshot(savedSession, persistAfterApply: false)
+            self.wasRestoredFromSavedSession = (
+                leftPane.tabs.count > 1
+                || isDualPane
+                || leftPane.activeTab.currentURL.standardizedFileURL != homeURL.standardizedFileURL
+            )
+        }
+
+        self.leftPane.onSessionMutated = { [weak self] in
+            self?.persistCurrentTabSession()
+        }
+        self.rightPane.onSessionMutated = { [weak self] in
+            self?.persistCurrentTabSession()
         }
 
         Task { @MainActor [weak self] in
@@ -286,6 +329,7 @@ final class WorkspaceState {
                 isSidebarVisible = sidebarVisibleBeforeDualPane
             }
         }
+        persistCurrentTabSession()
     }
 
     func tr(_ nb: String, _ en: String) -> String {
@@ -371,6 +415,7 @@ final class WorkspaceState {
         isSidebarVisible = true
         tour.resetDemoState()
         tour.isActive = false
+        persistCurrentTabSession()
         showStatus(tr(
             "Omvisning fullført – FlowFile er klar til vanlig bruk!",
             "Tour complete – FlowFile is ready for normal use!"
@@ -509,6 +554,7 @@ final class WorkspaceState {
             } else {
                 let canReuseColdLaunchTab = isColdLaunchOverride ?? (
                     !hasHandledColdLaunchExternalOpen
+                    && !wasRestoredFromSavedSession
                     && Date().timeIntervalSince(launchTimestamp) < 2.5
                     && activePane.tabs.count == 1
                     && activeTab.backStack.isEmpty
@@ -547,6 +593,7 @@ final class WorkspaceState {
             isCompareActive = false
             recordRecentFolder(folderURL)
             syncTerminalIfOpen()
+            persistCurrentTabSession()
         }
     }
 
@@ -564,6 +611,7 @@ final class WorkspaceState {
         if !activeTab.isInsideArchive {
             QuickLookCoordinator.shared.updateSelectionIfVisible(Array(activeTab.selectedURLs))
         }
+        persistCurrentTabSession()
     }
 
     func navigateActiveTab(to url: URL) {
@@ -573,6 +621,7 @@ final class WorkspaceState {
             recordRecentFolder(activeTab.currentURL)
             syncTerminalIfOpen()
         }
+        persistCurrentTabSession()
     }
 
     func openItem(_ item: FileItem, forceEnterPackage: Bool = false) {
@@ -762,7 +811,7 @@ final class WorkspaceState {
         lTab.diffStatuses = result.leftStatuses
         rTab.diffStatuses = result.rightStatuses
 
-        // Auto-mark missing and newer items (Total Commander Shift+F2 ergonomics!)
+        // Auto-mark missing and newer items for quick transfer
         lTab.markedURLs = Set(result.leftStatuses.compactMap { url, status in
             (status == .onlyHere || status == .newerHere) ? url : nil
         })
@@ -1027,7 +1076,7 @@ final class WorkspaceState {
         }
     }
 
-    /// Total Commander F5: Copy selected/marked items (or archive entries!) directly to opposite pane
+    /// F5: Copy selected/marked items (or archive entries!) directly to opposite pane
     func copySelectedToOppositePane() {
         guard guardNotInTourSandbox() else { return }
         guard isDualPane else {
@@ -1067,7 +1116,7 @@ final class WorkspaceState {
         transferQueue.enqueue(operation: .copy, urls: urls, to: dest)
     }
 
-    /// Total Commander F6: Move selected/marked items directly to opposite pane
+    /// F6: Move selected/marked items directly to opposite pane
     func moveSelectedToOppositePane() {
         guard guardNotInTourSandbox() else { return }
         guard isDualPane else {
@@ -1365,6 +1414,191 @@ final class WorkspaceState {
         pb.clearContents()
         pb.writeObjects(urls as [NSURL])
         clipboardChangeCount = pb.changeCount
+    }
+
+    // MARK: - v1.1 Workspaces, Color Tags, Deep Search, Sync, Space, Duplicates & Quick Tools
+
+    func currentSessionSnapshot() -> TabSessionSnapshot {
+        let leftPaths = leftPane.tabs.map { $0.currentURL.standardizedFileURL.path }
+        let rightPaths = rightPane.tabs.map { $0.currentURL.standardizedFileURL.path }
+        let leftIdx = leftPane.tabs.firstIndex(where: { $0.id == leftPane.activeTabID }) ?? 0
+        let rightIdx = rightPane.tabs.firstIndex(where: { $0.id == rightPane.activeTabID }) ?? 0
+
+        return TabSessionSnapshot(
+            isDualPane: isDualPane,
+            activePaneRaw: activePaneID.rawValue,
+            leftTabPaths: leftPaths,
+            rightTabPaths: rightPaths,
+            activeLeftIndex: leftIdx,
+            activeRightIndex: rightIdx
+        )
+    }
+
+    func persistCurrentTabSession() {
+        guard !suppressSessionPersist, !tour.isActive else { return }
+        TabSessionPersistence.saveLastSession(currentSessionSnapshot())
+    }
+
+    func applySessionSnapshot(_ snapshot: TabSessionSnapshot, persistAfterApply: Bool = true) {
+        let homeURL = FileManager.default.homeDirectoryForCurrentUser
+        let leftURLs = TabSessionPersistence.validatedDirectoryURLs(from: snapshot.leftTabPaths, fallbackURL: homeURL)
+        let rightURLs = TabSessionPersistence.validatedDirectoryURLs(from: snapshot.rightTabPaths, fallbackURL: homeURL)
+
+        suppressSessionPersist = true
+        leftPane.replaceTabs(with: leftURLs, activeIndex: snapshot.activeLeftIndex, showHidden: showHiddenFiles)
+        rightPane.replaceTabs(with: rightURLs, activeIndex: snapshot.activeRightIndex, showHidden: showHiddenFiles)
+        isDualPane = snapshot.isDualPane
+        activePaneID = (snapshot.isDualPane && snapshot.activePaneRaw == PaneID.right.rawValue) ? .right : .left
+        isCompareActive = false
+        suppressSessionPersist = false
+
+        syncTerminalIfOpen()
+        if persistAfterApply {
+            persistCurrentTabSession()
+        }
+    }
+
+    func saveCurrentWorkspace(named name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let snap = currentSessionSnapshot()
+        if let idx = savedWorkspaces.firstIndex(where: { $0.name.caseInsensitiveCompare(trimmed) == .orderedSame }) {
+            savedWorkspaces[idx].snapshot = snap
+            savedWorkspaces[idx].createdAt = Date()
+        } else {
+            savedWorkspaces.append(SavedWorkspace(name: trimmed, snapshot: snap))
+        }
+        showStatus(tr("Lagret arbeidsområdet «\(trimmed)»", "Saved workspace '\(trimmed)'"))
+    }
+
+    func applySavedWorkspace(_ saved: SavedWorkspace) {
+        applySessionSnapshot(saved.snapshot, persistAfterApply: true)
+        showStatus(tr("Åpnet arbeidsområdet «\(saved.name)»", "Switched to workspace '\(saved.name)'"))
+    }
+
+    func deleteSavedWorkspace(id: UUID) {
+        savedWorkspaces.removeAll { $0.id == id }
+    }
+
+    func revealURLInActiveTab(_ targetURL: URL) {
+        let std = targetURL.standardizedFileURL
+        let parent = std.deletingLastPathComponent()
+        let needsHidden = std.lastPathComponent.hasPrefix(".")
+        activeTab.navigate(
+            to: parent,
+            showHidden: showHiddenFiles || needsHidden,
+            recordHistory: true,
+            selecting: std
+        )
+        activeTab.scrollToSelectionGeneration &+= 1
+        isCompareActive = false
+        recordRecentFolder(parent)
+        syncTerminalIfOpen()
+        persistCurrentTabSession()
+    }
+
+    func toggleColorTagOnSelection(_ tag: FinderColorTag) {
+        guard guardNotInTourSandbox() else { return }
+        guard !activeTab.isInsideArchive else { return }
+        let urls = activeTab.effectiveActionURLs
+        guard !urls.isEmpty else { return }
+        do {
+            try TagService.toggleColorTag(tag, on: urls)
+            refreshAllTabs()
+            showStatus(tr("Oppdaterte fargetagg «\(tag.title)»", "Updated '\(tag.title)' color tag"))
+        } catch {
+            alertErrorMessage = error.localizedDescription
+        }
+    }
+
+    func clearColorTagsOnSelection() {
+        guard guardNotInTourSandbox() else { return }
+        guard !activeTab.isInsideArchive else { return }
+        let urls = activeTab.effectiveActionURLs
+        guard !urls.isEmpty else { return }
+        do {
+            try TagService.clearColorTags(on: urls)
+            refreshAllTabs()
+            showStatus(tr("Fjernet fargetagger fra valgte elementer", "Cleared color tags on selection"))
+        } catch {
+            alertErrorMessage = error.localizedDescription
+        }
+    }
+
+    func openTaggedFilesBrowser(for tag: FinderColorTag) {
+        selectedSidebarColorTag = tag
+        isTaggedFilesSheetVisible = true
+    }
+
+    func openDeepSearch() {
+        isDeepSearchVisible = true
+    }
+
+    func openDiskSpaceAnalyzer() {
+        guard !activeTab.isInsideArchive else {
+            showStatus(tr("Kan ikke analysere diskplass inni et komprimert arkiv", "Cannot analyze disk space inside an archive"))
+            return
+        }
+        isDiskSpaceVisible = true
+    }
+
+    func openFolderSync() {
+        if !isDualPane {
+            toggleDualPane()
+        }
+        guard !leftPane.activeTab.isInsideArchive && !rightPane.activeTab.isInsideArchive else {
+            showStatus(tr("Velg to vanlige mapper før synkronisering", "Select two regular folders before synchronizing"))
+            return
+        }
+        isFolderSyncVisible = true
+    }
+
+    func openDuplicateFinder() {
+        guard !activeTab.isInsideArchive else { return }
+        isDuplicateFinderVisible = true
+    }
+
+    func openImageConverter() {
+        guard guardNotInTourSandbox() else { return }
+        guard !activeTab.isInsideArchive else { return }
+        let imageURLs = activeTab.effectiveActionURLs.filter { QuickFileToolsService.isSupportedImage($0) }
+        guard !imageURLs.isEmpty else {
+            showStatus(tr("Velg minst én bildefil (JPG, PNG, HEIC, TIFF, WebP ...)", "Select at least one image file (JPG, PNG, HEIC, TIFF, WebP ...)"))
+            return
+        }
+        imageConvertTargetURLs = imageURLs
+        isImageConvertVisible = true
+    }
+
+    func mergeSelectedToPDF() {
+        guard guardNotInTourSandbox() else { return }
+        guard !activeTab.isInsideArchive else { return }
+        let validURLs = activeTab.effectiveActionURLs.filter { QuickFileToolsService.isMergeableToPDF($0) }
+        guard !validURLs.isEmpty else {
+            showStatus(tr("Velg PDF- eller bildefiler for å slå sammen til én PDF", "Select PDF or image files to merge into a single PDF"))
+            return
+        }
+        do {
+            let pdfURL = try QuickFileToolsService.mergeIntoPDF(urls: validURLs, inDirectory: activeTab.currentURL)
+            refreshAllTabs()
+            activeTab.selectedURLs = [pdfURL]
+            showStatus(tr("Opprettet «\(pdfURL.lastPathComponent)»", "Created '\(pdfURL.lastPathComponent)'"))
+        } catch {
+            alertErrorMessage = error.localizedDescription
+        }
+    }
+
+    func toggleFlatViewInActiveTab() {
+        guard !activeTab.isInsideArchive else {
+            showStatus(tr("Flat visning er kun tilgjengelig i vanlige mapper", "Flat view is only available in regular folders"))
+            return
+        }
+        activeTab.toggleFlatBranchView(showHidden: showHiddenFiles)
+        showStatus(
+            activeTab.isFlatBranchView
+                ? tr("Flat visning aktivert – viser alle filer fra undermapper samlet", "Flat view enabled – showing all nested files together")
+                : tr("Flat visning avsluttet", "Flat view disabled")
+        )
     }
 
     func showStatus(_ text: String) {

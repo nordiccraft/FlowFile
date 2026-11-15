@@ -25,6 +25,14 @@ final class TabState: Identifiable {
         didSet { cachedDisplayedItems = nil }
     }
 
+    // Flat Subfolder View & Color Tag Filter
+    var isFlatBranchView: Bool = false {
+        didSet { cachedDisplayedItems = nil }
+    }
+    var activeColorTagFilter: FinderColorTag? = nil {
+        didSet { cachedDisplayedItems = nil }
+    }
+
     var allItems: [FileItem] = [] {
         didSet { cachedDisplayedItems = nil }
     }
@@ -94,7 +102,9 @@ final class TabState: Identifiable {
             sortAscending,
             hideIdenticalInDiff,
             diffStatuses.count,
-            calculatedFolderSizes.count
+            calculatedFolderSizes.count,
+            isFlatBranchView,
+            activeColorTagFilter
         )
         if let cached = cachedDisplayedItems {
             return cached
@@ -106,10 +116,20 @@ final class TabState: Identifiable {
             candidates = candidates.filter { diffStatuses[$0.url] != .identical }
         }
 
+        if let tagFilter = activeColorTagFilter {
+            candidates = candidates.filter { $0.colorTags.contains(tagFilter) }
+        }
+
         let trimmed = filterQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty {
             candidates = candidates.filter { item in
-                fuzzyMatch(query: trimmed, in: item.name)
+                if fuzzyMatch(query: trimmed, in: item.name) {
+                    return true
+                }
+                if let subpath = item.relativeSubpath, fuzzyMatch(query: trimmed, in: subpath) {
+                    return true
+                }
+                return false
             }
         }
 
@@ -131,7 +151,7 @@ final class TabState: Identifiable {
         return items.filter { selectedURLs.contains($0.url) }
     }
 
-    /// Returns marked items if any are marked (Total Commander style), otherwise selected items.
+    /// Returns marked items if any are marked, otherwise selected items.
     var effectiveActionURLs: [URL] {
         effectiveActionItems.map(\.url)
     }
@@ -154,6 +174,7 @@ final class TabState: Identifiable {
     func enterArchive(_ archiveURL: URL, showHidden: Bool) {
         archiveFileURL = archiveURL.standardizedFileURL
         archiveSubpath = ""
+        isFlatBranchView = false
         filterQuery = ""
         isFilterBarVisible = false
         markedURLs.removeAll()
@@ -216,6 +237,7 @@ final class TabState: Identifiable {
         }
 
         currentURL = standardized
+        isFlatBranchView = false
         filterQuery = ""
         isFilterBarVisible = false
         markedURLs.removeAll()
@@ -235,6 +257,7 @@ final class TabState: Identifiable {
         let leaving = currentURL
         forwardStack.append(leaving)
         currentURL = previous
+        isFlatBranchView = false
         filterQuery = ""
         isFilterBarVisible = false
         markedURLs.removeAll()
@@ -249,11 +272,12 @@ final class TabState: Identifiable {
         currentURL = next
         archiveFileURL = nil
         archiveSubpath = ""
+        isFlatBranchView = false
         filterQuery = ""
         isFilterBarVisible = false
         markedURLs.removeAll()
         clearDiff()
-        reload(showHidden: showHidden, selectFirstIfEmpty: true)
+        reload(showHidden: showHidden, preferredSelection: nil, selectFirstIfEmpty: true)
         setupWatcher()
     }
 
@@ -291,6 +315,9 @@ final class TabState: Identifiable {
                 )
                 gitBranch = nil
                 gitBadges = [:]
+            } else if isFlatBranchView {
+                loaded = try FlatBranchService.listRecursiveFiles(at: currentURL, showHidden: showHidden)
+                refreshGitStatusAsync(for: currentURL)
             } else {
                 loaded = try FileSystemService.listDirectory(at: currentURL, showHidden: showHidden)
                 refreshGitStatusAsync(for: currentURL)
@@ -335,7 +362,15 @@ final class TabState: Identifiable {
         }
     }
 
-    /// Total Commander mark + calculate folder size + step down one row
+    func toggleFlatBranchView(showHidden: Bool) {
+        guard !isInsideArchive else { return }
+        isFlatBranchView.toggle()
+        markedURLs.removeAll()
+        clearDiff()
+        reload(showHidden: showHidden, selectFirstIfEmpty: true)
+    }
+
+    /// Quick-mark item + calculate folder size + step down one row
     func toggleMarkOnSelectedAndAdvance() {
         let items = displayedItems
         guard !items.isEmpty else { return }

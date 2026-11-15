@@ -296,7 +296,7 @@ enum MultiRenameService {
             .replacingOccurrences(of: "[T]", with: time)
             .replacingOccurrences(of: "[P]", with: parent)
 
-        // Support Total Commander substring range [Nstart-end] (1-based inclusive)
+        // Support substring range token [Nstart-end] (1-based inclusive)
         if let regex = try? NSRegularExpression(pattern: "\\[N(\\d+)-(\\d+)\\]") {
             let matches = regex.matches(in: result, range: NSRange(result.startIndex..<result.endIndex, in: result))
             for match in matches.reversed() {

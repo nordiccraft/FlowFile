@@ -4,7 +4,7 @@ cask "flowfile" do
 
   url "https://github.com/nordiccraft/FlowFile/releases/download/v#{version}/FlowFile-Update.zip"
   name "FlowFile"
-  desc "Native macOS file explorer combining Windows Explorer and Total Commander"
+  desc "Fast native single- and dual-pane file manager for macOS"
   homepage "https://github.com/nordiccraft/FlowFile"
 
   app "FlowFile.app"

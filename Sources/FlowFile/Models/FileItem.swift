@@ -62,8 +62,15 @@ struct FileItem: Identifiable, Hashable {
     let kindDescription: String
     let cloudState: CloudSyncState
     let archiveEntryPath: String?
+    let tagNames: [String]
+    let labelNumber: Int?
+    let relativeSubpath: String?
 
     var id: URL { url }
+
+    var colorTags: [FinderColorTag] {
+        FinderColorTag.extractColorTags(from: tagNames, labelNumber: labelNumber)
+    }
 
     var isVirtualArchiveEntry: Bool {
         archiveEntryPath != nil
@@ -108,6 +115,9 @@ struct FileItem: Identifiable, Hashable {
         self.creationDate = nil
         self.cloudState = .none
         self.archiveEntryPath = archiveEntryPath
+        self.tagNames = []
+        self.labelNumber = nil
+        self.relativeSubpath = nil
 
         if isDirectory {
             self.stemName = name
@@ -136,11 +146,19 @@ struct FileItem: Identifiable, Hashable {
     init(
         url: URL,
         resourceValues: URLResourceValues? = nil,
-        insideCloudRoot: Bool = false
+        insideCloudRoot: Bool = false,
+        relativeSubpath: String? = nil
     ) {
         let standardized = url.standardizedFileURL
         self.url = standardized
         self.archiveEntryPath = nil
+        if let providedTags = resourceValues?.tagNames {
+            self.tagNames = providedTags
+        } else {
+            self.tagNames = (try? standardized.resourceValues(forKeys: [.tagNamesKey]))?.tagNames ?? []
+        }
+        self.labelNumber = resourceValues?.labelNumber
+        self.relativeSubpath = relativeSubpath
 
         let fullName = standardized.lastPathComponent
         self.name = fullName
@@ -212,8 +230,13 @@ struct FileItem: Identifiable, Hashable {
 
         if targetFolder, let resolved {
             self.kindDescription = "Snarvei → \(resolved.lastPathComponent)"
+        } else if let desc = resourceValues?.localizedTypeDescription {
+            self.kindDescription = desc
+        } else if let desc = (try? standardized.resourceValues(forKeys: [.localizedTypeDescriptionKey]))?.localizedTypeDescription {
+            self.kindDescription = desc
         } else {
-            self.kindDescription = resourceValues?.localizedTypeDescription ?? (isDir ? "Mappe" : "Fil")
+            let ext = standardized.pathExtension
+            self.kindDescription = isDir ? "Mappe" : (ext.isEmpty ? "Fil" : "\(ext.uppercased())-fil")
         }
 
         self.cloudState = CloudStorageService.detectSyncState(
@@ -242,7 +265,10 @@ struct FileItem: Identifiable, Hashable {
         lhs.url == rhs.url &&
         lhs.modificationDate == rhs.modificationDate &&
         lhs.size == rhs.size &&
-        lhs.cloudState == rhs.cloudState
+        lhs.cloudState == rhs.cloudState &&
+        lhs.tagNames == rhs.tagNames &&
+        lhs.labelNumber == rhs.labelNumber &&
+        lhs.relativeSubpath == rhs.relativeSubpath
     }
 
     func hash(into hasher: inout Hasher) {

@@ -126,6 +126,7 @@ struct AppKitFileTableView: NSViewRepresentable {
             || coordinator.lastGitBadges != newGitBadges
             || coordinator.lastDiffStatuses != newDiffStatuses
             || coordinator.lastCutSet != cutSet
+            || coordinator.lastFlatBranchView != tab.isFlatBranchView
 
         coordinator.items = newItems
         coordinator.lastMarked = newMarked
@@ -133,6 +134,7 @@ struct AppKitFileTableView: NSViewRepresentable {
         coordinator.lastGitBadges = newGitBadges
         coordinator.lastDiffStatuses = newDiffStatuses
         coordinator.lastCutSet = cutSet
+        coordinator.lastFlatBranchView = tab.isFlatBranchView
 
         guard let tableView = coordinator.tableView else { return }
 
@@ -175,6 +177,7 @@ struct AppKitFileTableView: NSViewRepresentable {
         var lastGitBadges: [URL: GitFileBadge] = [:]
         var lastDiffStatuses: [URL: FileDiffStatus] = [:]
         var lastCutSet: Set<URL> = []
+        var lastFlatBranchView: Bool = false
         var lastActivePaneID: PaneID? = nil
         var lastScrollGeneration: Int = 0
         var isSyncingSelection: Bool = false
@@ -373,7 +376,7 @@ struct AppKitFileTableView: NSViewRepresentable {
             workspace.openItem(items[clicked])
         }
 
-        // MARK: Keyboard Handling (Windows Explorer + Total Commander + macOS Quick Look)
+        // MARK: Keyboard Handling & Quick Shortcuts
 
         func handleKeyDown(_ event: NSEvent) -> Bool {
             activateThisPane()
@@ -435,10 +438,13 @@ struct AppKitFileTableView: NSViewRepresentable {
                     return true
                 }
 
-            case 53: // Escape -> Clear filter, exit folder comparison, or clear TC marks
+            case 53: // Escape -> Clear filter, exit folder comparison, clear tag filter, or clear marks
                 if !tab.filterQuery.isEmpty || tab.isFilterBarVisible {
                     tab.filterQuery = ""
                     tab.isFilterBarVisible = false
+                    return true
+                } else if tab.activeColorTagFilter != nil {
+                    tab.activeColorTagFilter = nil
                     return true
                 } else if workspace.isCompareActive {
                     workspace.clearDualPaneComparison()
@@ -508,6 +514,20 @@ struct AppKitFileTableView: NSViewRepresentable {
                 break
             }
 
+            // Ctrl+1..7 to toggle Finder Color Tags, Ctrl+0 to clear color tags
+            if hasCtrl && !hasCmd && !hasOpt && !hasShift,
+               let rawChars = event.charactersIgnoringModifiers,
+               rawChars.count == 1 {
+                if rawChars == "0" {
+                    workspace.clearColorTagsOnSelection()
+                    return true
+                } else if let digit = Int(rawChars),
+                          let colorTag = FinderColorTag(rawValue: digit) {
+                    workspace.toggleColorTagOnSelection(colorTag)
+                    return true
+                }
+            }
+
             // Instant Type-to-Filter when typing normal characters!
             if !hasCmd && !hasCtrl && !hasOpt,
                let chars = event.characters,
@@ -554,6 +574,9 @@ struct AppKitFileTableView: NSViewRepresentable {
                 if item.isShortcut {
                     addItem(to: menu, title: "Gå til originalens plassering i FlowFile", action: #selector(ctxRevealShortcutOriginal))
                 }
+                if tab.isFlatBranchView, item.relativeSubpath != nil {
+                    addItem(to: menu, title: tr("Gå til filens undermappe", "Open File's Subfolder"), action: #selector(ctxRevealInSubfolder))
+                }
 
                 if !tab.isInsideArchive {
                     addItem(to: menu, title: "Del... (⇧⌘S)", action: #selector(ctxShare))
@@ -595,9 +618,52 @@ struct AppKitFileTableView: NSViewRepresentable {
                 }
 
                 if !tab.isInsideArchive {
+                    let actionURLs = tab.effectiveActionURLs
+                    let hasImage = actionURLs.contains { QuickFileToolsService.isSupportedImage($0) }
+                    let hasPDFMergeable = actionURLs.contains { QuickFileToolsService.isMergeableToPDF($0) }
+                    if hasImage || hasPDFMergeable {
+                        menu.addItem(.separator())
+                        if hasImage {
+                            addItem(to: menu, title: tr("Konverter / skaler bilde(r)...", "Convert / Resize Image(s)..."), action: #selector(ctxConvertImages))
+                        }
+                        if hasPDFMergeable {
+                            addItem(to: menu, title: tr("Slå sammen til én PDF", "Merge into Single PDF"), action: #selector(ctxMergePDF))
+                        }
+                    }
+
+                    menu.addItem(.separator())
+                    let tagMenu = NSMenu(title: tr("Fargetagger", "Color Tags"))
+                    let currentTags = Set(item.colorTags)
+                    for tag in FinderColorTag.allCases {
+                        let tagItem = NSMenuItem(
+                            title: "\(tag.title) (⌃\(tag.shortcutDigit))",
+                            action: #selector(ctxToggleColorTag(_:)),
+                            keyEquivalent: ""
+                        )
+                        tagItem.target = self
+                        tagItem.tag = tag.rawValue
+                        tagItem.state = currentTags.contains(tag) ? .on : .off
+                        tagItem.image = makeColorDotImage(tag.nsColor)
+                        tagMenu.addItem(tagItem)
+                    }
+                    tagMenu.addItem(.separator())
+                    let clearTagItem = NSMenuItem(
+                        title: tr("Fjern fargetagger (⌃0)", "Clear Color Tags (⌃0)"),
+                        action: #selector(ctxClearColorTags),
+                        keyEquivalent: ""
+                    )
+                    clearTagItem.target = self
+                    tagMenu.addItem(clearTagItem)
+
+                    let tagParent = NSMenuItem(title: tr("Fargetagger", "Color Tags"), action: nil, keyEquivalent: "")
+                    tagParent.submenu = tagMenu
+                    menu.addItem(tagParent)
+                }
+
+                if !tab.isInsideArchive {
                     menu.addItem(.separator())
                     addItem(to: menu, title: "Gi nytt navn... (F2)", action: #selector(ctxRename))
-                    addItem(to: menu, title: "Multi-Rename Tool... (Cmd+M)", action: #selector(ctxMultiRename))
+                    addItem(to: menu, title: tr("Masse-omdøping... (Cmd+M)", "Batch Rename... (Cmd+M)"), action: #selector(ctxMultiRename))
                     addItem(to: menu, title: "Flytt til Papirkurv (Delete)", action: #selector(ctxTrash))
                     addItem(to: menu, title: "Slett permanent... (Shift+Delete)", action: #selector(ctxPermDelete))
                 }
@@ -611,6 +677,10 @@ struct AppKitFileTableView: NSViewRepresentable {
                 addItem(to: menu, title: "Lim inn her (Cmd+V)", action: #selector(ctxPaste))
                 addItem(to: menu, title: "Ny mappe... (F7)", action: #selector(ctxNewFolder))
                 addItem(to: menu, title: "Ny tom fil...", action: #selector(ctxNewFile))
+                menu.addItem(.separator())
+                addItem(to: menu, title: tr("Dypsøk i denne mappen... (⇧⌘F)", "Deep Search Here... (⇧⌘F)"), action: #selector(ctxDeepSearch))
+                addItem(to: menu, title: tr("Analyser diskbruk her...", "Analyze Disk Space Here..."), action: #selector(ctxDiskSpace))
+                addItem(to: menu, title: tr("Finn duplikatfiler her...", "Find Duplicate Files Here..."), action: #selector(ctxDuplicates))
             }
             menu.addItem(.separator())
             addItem(to: menu, title: "Vis/skjul innebygd Terminal-skuff (Ctrl+`)", action: #selector(ctxToggleEmbeddedTerminal))
@@ -677,6 +747,36 @@ struct AppKitFileTableView: NSViewRepresentable {
         @objc private func ctxNewFolder() { workspace.promptNewFolder() }
         @objc private func ctxNewFile() { workspace.promptNewFile() }
         @objc private func ctxOpenTerminal() { workspace.openTerminalInActiveFolder() }
+        @objc private func ctxRevealInSubfolder() {
+            if let item = tab.primarySelectedItem {
+                workspace.revealURLInActiveTab(item.url)
+            }
+        }
+        @objc private func ctxToggleColorTag(_ sender: NSMenuItem) {
+            if let tag = FinderColorTag(rawValue: sender.tag) {
+                workspace.toggleColorTagOnSelection(tag)
+            }
+        }
+        @objc private func ctxClearColorTags() { workspace.clearColorTagsOnSelection() }
+        @objc private func ctxConvertImages() { workspace.openImageConverter() }
+        @objc private func ctxMergePDF() { workspace.mergeSelectedToPDF() }
+        @objc private func ctxDeepSearch() { workspace.openDeepSearch() }
+        @objc private func ctxDiskSpace() { workspace.openDiskSpaceAnalyzer() }
+        @objc private func ctxDuplicates() { workspace.openDuplicateFinder() }
+
+        private func makeColorDotImage(_ color: NSColor) -> NSImage {
+            let size = NSSize(width: 11, height: 11)
+            return NSImage(size: size, flipped: false) { rect in
+                let circleRect = rect.insetBy(dx: 1, dy: 1)
+                let path = NSBezierPath(ovalIn: circleRect)
+                color.setFill()
+                path.fill()
+                NSColor.black.withAlphaComponent(0.22).setStroke()
+                path.lineWidth = 0.7
+                path.stroke()
+                return true
+            }
+        }
         @objc private func ctxRevealInFinder() {
             let urls = tab.effectiveActionURLs
             if !urls.isEmpty {
@@ -772,9 +872,50 @@ struct AppKitFileTableView: NSViewRepresentable {
                 cell.alphaValue = isCut ? 0.45 : (gitBadge == .ignored ? 0.55 : (item.isHidden ? 0.72 : 1.0))
                 cell.imageView?.image = FileIconCache.shared.icon(for: item)
                 let baseDisplay = item.isShortcut ? "\(item.name) ↪" : item.name
-                tf.stringValue = isMarked ? "✓ \(baseDisplay)" : baseDisplay
-                tf.font = .systemFont(ofSize: 12.5, weight: isMarked ? .semibold : (item.isNavigableFolder ? .medium : .regular))
-                tf.textColor = isMarked ? markedColor : .labelColor
+                let displayTitle = isMarked ? "✓ \(baseDisplay)" : baseDisplay
+                let primaryFont = NSFont.systemFont(
+                    ofSize: 12.5,
+                    weight: isMarked ? .semibold : (item.isNavigableFolder ? .medium : .regular)
+                )
+                let primaryColor: NSColor = isMarked ? markedColor : .labelColor
+                let tags = item.colorTags
+                let flatSubpath = tab.isFlatBranchView ? item.relativeSubpath : nil
+
+                if tags.isEmpty && flatSubpath == nil {
+                    tf.stringValue = displayTitle
+                    tf.font = primaryFont
+                    tf.textColor = primaryColor
+                } else {
+                    let attr = NSMutableAttributedString(
+                        string: displayTitle,
+                        attributes: [
+                            .font: primaryFont,
+                            .foregroundColor: primaryColor
+                        ]
+                    )
+                    if !tags.isEmpty {
+                        attr.append(NSAttributedString(string: "  ", attributes: [.font: primaryFont]))
+                        for tag in tags.prefix(3) {
+                            attr.append(NSAttributedString(
+                                string: "●",
+                                attributes: [
+                                    .font: NSFont.systemFont(ofSize: 10, weight: .bold),
+                                    .foregroundColor: tag.nsColor
+                                ]
+                            ))
+                        }
+                    }
+                    if let subpath = flatSubpath, !subpath.isEmpty {
+                        attr.append(NSAttributedString(
+                            string: "   \(subpath)",
+                            attributes: [
+                                .font: NSFont.monospacedSystemFont(ofSize: 10.5, weight: .regular),
+                                .foregroundColor: NSColor.secondaryLabelColor
+                            ]
+                        ))
+                    }
+                    tf.attributedStringValue = attr
+                }
                 tf.alignment = .left
 
             case "status":

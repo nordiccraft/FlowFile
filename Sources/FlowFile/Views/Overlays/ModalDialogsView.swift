@@ -320,13 +320,13 @@ struct SettingsSheetView: View {
             Divider()
 
             VStack(alignment: .leading, spacing: 10) {
-                Text(workspace.tr("Tastatur & Total Commander-oppførsel", "Keyboard & Total Commander Behavior"))
+                Text(workspace.tr("Tastatur & Hurtighandlinger", "Keyboard & Quick Actions"))
                     .font(.system(size: 13, weight: .semibold))
 
                 Toggle(
                     workspace.tr(
-                        "Bruk Space til Total Commander-markering + mappestørrelse (og Shift+Space / F3 for Quick Look)",
-                        "Use Space for Total Commander mark + folder size (and Shift+Space / F3 for Quick Look)"
+                        "Bruk Space til hurtigmarkering + mappestørrelse (og Shift+Space / F3 for Quick Look)",
+                        "Use Space for quick-mark + folder size (and Shift+Space / F3 for Quick Look)"
                     ),
                     isOn: $workspace.swapSpaceShortcut
                 )
@@ -334,8 +334,8 @@ struct SettingsSheetView: View {
 
                 Toggle(
                     workspace.tr(
-                        "Vis alltid F3–F8-handlingsraden nederst (også i 1-panel Explorer-modus)",
-                        "Always show bottom F3–F8 action bar (even in 1-Pane Explorer mode)"
+                        "Vis alltid F3–F8-handlingsraden nederst (også i enkeltpanel-visning)",
+                        "Always show bottom F3–F8 action bar (even in single-pane view)"
                     ),
                     isOn: $workspace.showFKeyBarAlways
                 )

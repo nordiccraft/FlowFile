@@ -56,7 +56,7 @@ struct MultiRenameSheetView: View {
                             .frame(width: 76)
                     }
 
-                    // Quick insert token pills (Total Commander style!)
+                    // Quick insert token pills
                     HStack(spacing: 5) {
                         tokenButton("[N]", help: "Opprinnelig filnavn")
                         tokenButton("[N1-5]", help: "Tegn 1 til 5 av navnet")

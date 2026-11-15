@@ -1,6 +1,10 @@
+import AppKit
 import CoreServices
 import CryptoKit
 import Foundation
+import ImageIO
+import PDFKit
+import UniformTypeIdentifiers
 @testable import FlowFile
 
 #if canImport(XCTest)
@@ -572,6 +576,249 @@ enum FlowFileVerificationSuite {
         }
     }
 
+    // MARK: - 14: Finder Color Tags & Workspace Session Persistence
+
+    static func colorTagsAndWorkspaceSessionPersistence() async throws {
+        try await withTempDir { tempDir in
+            let docA = tempDir.appendingPathComponent("rapport.txt")
+            let docB = tempDir.appendingPathComponent("budsjett.txt")
+            try Data("rapport".utf8).write(to: docA)
+            try Data("budsjett".utf8).write(to: docB)
+
+            // Custom non-color tag must be preserved when setting/clearing color tags
+            try TagService.writeTagNames(["ProsjektX"], to: docA)
+            try TagService.toggleColorTag(.red, on: [docA, docB])
+            try expect(TagService.readColorTags(at: docA) == [.red])
+            try expect(TagService.readColorTags(at: docB) == [.red])
+            try expect(TagService.readTagNames(at: docA).contains("ProsjektX"))
+
+            // Directory listing prefetches color tags onto FileItem
+            let listed = try FileSystemService.listDirectory(at: tempDir, showHidden: false)
+            try expect(listed.allSatisfy { $0.colorTags == [.red] })
+
+            let foundRed = await TagService.findItemsWithColorTag(.red, inRoots: [tempDir], showHidden: false)
+            try expect(foundRed.count == 2)
+
+            // Toggling again when all items already have .red removes .red while keeping "ProsjektX"
+            try TagService.toggleColorTag(.red, on: [docA, docB])
+            try expect(TagService.readColorTags(at: docA).isEmpty)
+            try expect(TagService.readTagNames(at: docA) == ["ProsjektX"])
+
+            // TabSessionPersistence & SavedWorkspace round-trip in isolated UserDefaults suite
+            let suiteName = "com.flowfile.tests.\(UUID().uuidString)"
+            guard let defaults = UserDefaults(suiteName: suiteName) else {
+                throw TestAssertionError(description: "Could not create isolated UserDefaults")
+            }
+            defer { defaults.removePersistentDomain(forName: suiteName) }
+
+            let subA = tempDir.appendingPathComponent("LeftFolder", isDirectory: true)
+            let subB = tempDir.appendingPathComponent("RightFolder", isDirectory: true)
+            try FileManager.default.createDirectory(at: subA, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: subB, withIntermediateDirectories: true)
+
+            let snap = TabSessionSnapshot(
+                isDualPane: true,
+                activePaneRaw: "right",
+                leftTabPaths: [subA.path, "/nonexistent/deleted/path"],
+                rightTabPaths: [subB.path],
+                activeLeftIndex: 0,
+                activeRightIndex: 0
+            )
+            TabSessionPersistence.saveLastSession(snap, defaults: defaults)
+            try expect(TabSessionPersistence.loadLastSession(defaults: defaults) == snap)
+
+            let validated = TabSessionPersistence.validatedDirectoryURLs(from: snap.leftTabPaths, fallbackURL: tempDir)
+            try expect(validated == [subA.standardizedFileURL])
+
+            let fallbackValidated = TabSessionPersistence.validatedDirectoryURLs(from: ["/missing/one"], fallbackURL: tempDir)
+            try expect(fallbackValidated == [tempDir.standardizedFileURL])
+
+            let savedWS = SavedWorkspace(name: "Utvikling", snapshot: snap)
+            TabSessionPersistence.saveWorkspaces([savedWS], defaults: defaults)
+            let loadedWS = TabSessionPersistence.loadWorkspaces(defaults: defaults)
+            try expect(loadedWS.count == 1)
+            try expect(loadedWS.first?.name == "Utvikling")
+        }
+    }
+
+    // MARK: - 15: Deep Search, Flat Branch View, Disk Space Analyzer & Duplicate Finder
+
+    static func deepSearchFlatViewDiskSpaceAndDuplicates() async throws {
+        try await withTempDir { tempDir in
+            let sub1 = tempDir.appendingPathComponent("Alpha", isDirectory: true)
+            let sub2 = tempDir.appendingPathComponent("Beta/Nested", isDirectory: true)
+            try FileManager.default.createDirectory(at: sub1, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: sub2, withIntermediateDirectories: true)
+
+            let f1 = sub1.appendingPathComponent("notes.md")
+            let f2 = sub2.appendingPathComponent("invoice_2026.txt")
+            let f2Dup = sub1.appendingPathComponent("invoice_copy.txt")
+            let fSameSizeDiffContent = sub1.appendingPathComponent("different.txt")
+
+            let sharedPayload = Data(repeating: 0x41, count: 4096) + Data("HEMMELIG_FAKTURA_KODE\n".utf8)
+            var diffPayload = Data(repeating: 0x42, count: 4096) + Data("ANNEN_TEKST_MED_LENGDE".utf8)
+            // Make sure diffPayload has exact same byte count as sharedPayload to verify SHA-256 stage
+            if diffPayload.count < sharedPayload.count {
+                diffPayload.append(Data(repeating: 0x20, count: sharedPayload.count - diffPayload.count))
+            } else if diffPayload.count > sharedPayload.count {
+                diffPayload = diffPayload.prefix(sharedPayload.count)
+            }
+
+            try Data("Vanlig notat uten nøkkelord".utf8).write(to: f1)
+            try sharedPayload.write(to: f2)
+            try sharedPayload.write(to: f2Dup)
+            try diffPayload.write(to: fSameSizeDiffContent)
+
+            // Set older mtime on f2 and newer mtime on f2Dup
+            let olderDate = Date(timeIntervalSinceNow: -3600)
+            let newerDate = Date()
+            try FileManager.default.setAttributes([.modificationDate: olderDate], ofItemAtPath: f2.path)
+            try FileManager.default.setAttributes([.modificationDate: newerDate], ofItemAtPath: f2Dup.path)
+
+            // 1. DeepSearchService content search
+            let contentMatches = await DeepSearchService.search(
+                DeepSearchQuery(rootURL: tempDir, nameQuery: "", contentQuery: "HEMMELIG_FAKTURA_KODE")
+            )
+            try expect(contentMatches.count == 2)
+            try expect(contentMatches.allSatisfy { ($0.matchedLinePreview ?? "").contains("HEMMELIG_FAKTURA_KODE") })
+
+            // 2. FlatBranchService & TabState flat toggle
+            let flatItems = try FlatBranchService.listRecursiveFiles(at: tempDir, showHidden: false)
+            try expect(flatItems.count == 4, "All 4 nested files should be flattened without directory rows")
+            try expect(flatItems.contains(where: { $0.name == "invoice_2026.txt" && $0.relativeSubpath == "Beta/Nested" }))
+
+            let tab = TabState(initialURL: tempDir, showHidden: false)
+            try expect(!tab.isFlatBranchView)
+            tab.toggleFlatBranchView(showHidden: false)
+            try expect(tab.isFlatBranchView)
+            try expect(tab.displayedItems.count == 4)
+
+            // 3. DiskSpaceAnalyzerService
+            let spaceReport = await DiskSpaceAnalyzerService.analyze(directory: tempDir, includeHidden: false)
+            try expect(spaceReport.scannedFileCount == 4)
+            try expect(spaceReport.totalBytes > 0)
+            try expect(spaceReport.children.count == 2, "Root has Alpha and Beta immediate subfolders")
+            try expect(spaceReport.children.first?.name == "Alpha", "Alpha holds 3 files vs Beta's 1 file")
+
+            // 4. DuplicateFinderService (must group f2 & f2Dup, and exclude fSameSizeDiffContent!)
+            let dupGroups = await DuplicateFinderService.scanForDuplicates(inRoots: [tempDir], includeHidden: false)
+            try expect(dupGroups.count == 1)
+            try expect(dupGroups[0].items.count == 2)
+
+            let trashKeepingNewest = DuplicateFinderService.urlsToTrashKeepingNewest(in: dupGroups)
+            try expect(trashKeepingNewest == [f2.standardizedFileURL], "Older copy must be selected when keeping newest")
+
+            let trashKeepingOldest = DuplicateFinderService.urlsToTrashKeepingOldest(in: dupGroups)
+            try expect(trashKeepingOldest == [f2Dup.standardizedFileURL], "Newer copy must be selected when keeping oldest")
+        }
+    }
+
+    // MARK: - 16: Folder Synchronization & Quick File Tools (Image Convert, Merge PDF, SHA-256)
+
+    static func folderSyncAndQuickFileTools() async throws {
+        try await withTempDir { tempDir in
+            let leftDir = tempDir.appendingPathComponent("SyncLeft", isDirectory: true)
+            let rightDir = tempDir.appendingPathComponent("SyncRight", isDirectory: true)
+            try FileManager.default.createDirectory(at: leftDir, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: rightDir, withIntermediateDirectories: true)
+
+            // Safety checks: sameFolder & nestedFolders
+            try expectThrows("Same folder sync must throw") {
+                _ = try FolderSyncService.buildPlanSync(leftRoot: leftDir, rightRoot: leftDir, mode: .updateLeftToRight)
+            }
+            let nested = leftDir.appendingPathComponent("Sub", isDirectory: true)
+            try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+            try expectThrows("Nested folder sync must throw") {
+                _ = try FolderSyncService.buildPlanSync(leftRoot: leftDir, rightRoot: nested, mode: .updateLeftToRight)
+            }
+
+            let leftOnly = nested.appendingPathComponent("only_left.txt")
+            let rightOnly = rightDir.appendingPathComponent("only_right.txt")
+            try Data("L".utf8).write(to: leftOnly)
+            try Data("R".utf8).write(to: rightOnly)
+
+            // Two-way sync copies in both directions
+            let twoWayPlan = try FolderSyncService.buildPlanSync(leftRoot: leftDir, rightRoot: rightDir, mode: .twoWayNewest)
+            try expect(twoWayPlan.count == 2)
+            let executed = try FolderSyncService.execute(plan: twoWayPlan)
+            try expect(executed == 2)
+            try expect(FileManager.default.fileExists(atPath: rightDir.appendingPathComponent("Sub/only_left.txt").path))
+            try expect(FileManager.default.fileExists(atPath: leftDir.appendingPathComponent("only_right.txt").path))
+
+            // Mirror mode removes extra file in right
+            let extraInRight = rightDir.appendingPathComponent("stale_extra.txt")
+            try Data("stale".utf8).write(to: extraInRight)
+            let mirrorPlan = try FolderSyncService.buildPlanSync(leftRoot: leftDir, rightRoot: rightDir, mode: .mirrorLeftToRight)
+            try expect(mirrorPlan.count == 1 && mirrorPlan[0].operation == .trashInRight)
+            _ = try FolderSyncService.execute(plan: mirrorPlan)
+            try expect(!FileManager.default.fileExists(atPath: extraInRight.path))
+
+            // QuickFileToolsService: Generate a 400x300 PNG, convert/resize to JPEG, merge 2 images to PDF, and verify SHA-256
+            let toolsDir = tempDir.appendingPathComponent("QuickTools", isDirectory: true)
+            try FileManager.default.createDirectory(at: toolsDir, withIntermediateDirectories: true)
+
+            let samplePNG1 = toolsDir.appendingPathComponent("photo1.png")
+            let samplePNG2 = toolsDir.appendingPathComponent("photo2.png")
+            try writeSolidTestPNG(to: samplePNG1, width: 400, height: 300, color: .systemBlue)
+            try writeSolidTestPNG(to: samplePNG2, width: 400, height: 300, color: .systemGreen)
+
+            let convertedJPGs = try QuickFileToolsService.convertImages(
+                urls: [samplePNG1],
+                inDirectory: toolsDir,
+                format: .jpeg,
+                jpegQuality: 0.85,
+                resizePreset: .original
+            )
+            try expect(convertedJPGs.count == 1)
+            try expect(convertedJPGs[0].pathExtension == "jpg")
+            try expect(FileManager.default.fileExists(atPath: convertedJPGs[0].path))
+
+            let mergedPDF = try QuickFileToolsService.mergeIntoPDF(
+                urls: [samplePNG1, samplePNG2],
+                inDirectory: toolsDir,
+                preferredBaseName: "SamletTest"
+            )
+            try expect(FileManager.default.fileExists(atPath: mergedPDF.path))
+            let loadedPDF = PDFDocument(url: mergedPDF)
+            try expect(loadedPDF?.pageCount == 2, "Merged PDF from 2 images must contain 2 pages")
+
+            // Streaming SHA-256 verification against CryptoKit in-memory digest
+            let hashTarget = toolsDir.appendingPathComponent("checksum.bin")
+            let payload = Data("FlowFile v1.1 SHA-256 Test".utf8)
+            try payload.write(to: hashTarget)
+            let expectedHex = SHA256.hash(data: payload).map { String(format: "%02x", $0) }.joined()
+            let actualHex = try await QuickFileToolsService.computeSHA256(for: hashTarget)
+            try expect(actualHex == expectedHex)
+        }
+    }
+
+    private static func writeSolidTestPNG(to url: URL, width: Int, height: Int, color: NSColor) throws {
+        guard let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: width,
+            pixelsHigh: height,
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        ) else {
+            throw TestAssertionError(description: "Failed to allocate bitmap")
+        }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        color.setFill()
+        NSBezierPath.fill(NSRect(x: 0, y: 0, width: width, height: height))
+        NSGraphicsContext.restoreGraphicsState()
+
+        guard let pngData = rep.representation(using: .png, properties: [:]) else {
+            throw TestAssertionError(description: "Failed to encode PNG")
+        }
+        try pngData.write(to: url)
+    }
+
     static func runAll() async throws {
         try await multiRenameUppercaseAndCaseOnly()
         try await batchRenameRollbackOnMidBatchFailure()
@@ -586,6 +833,9 @@ enum FlowFileVerificationSuite {
         try await gitRepoRootLookup()
         try utf8ChunkDecoderSplitBoundaries()
         try await defaultFileBrowserAndSmartTabRouting()
+        try await colorTagsAndWorkspaceSessionPersistence()
+        try await deepSearchFlatViewDiskSpaceAndDuplicates()
+        try await folderSyncAndQuickFileTools()
     }
 }
 
@@ -644,13 +894,25 @@ final class FlowFileTests: XCTestCase {
     func testDefaultFileBrowserAndSmartTabRouting() async throws {
         try await FlowFileVerificationSuite.defaultFileBrowserAndSmartTabRouting()
     }
+
+    func testColorTagsAndWorkspaceSessionPersistence() async throws {
+        try await FlowFileVerificationSuite.colorTagsAndWorkspaceSessionPersistence()
+    }
+
+    func testDeepSearchFlatViewDiskSpaceAndDuplicates() async throws {
+        try await FlowFileVerificationSuite.deepSearchFlatViewDiskSpaceAndDuplicates()
+    }
+
+    func testFolderSyncAndQuickFileTools() async throws {
+        try await FlowFileVerificationSuite.folderSyncAndQuickFileTools()
+    }
 }
 #else
 @main
 struct LocalCLTTestRunner {
     static func main() async throws {
         try await FlowFileVerificationSuite.runAll()
-        print("ALL 13 FLOWFILE TEST SUITES PASSED")
+        print("ALL 16 FLOWFILE TEST SUITES PASSED")
     }
 }
 #endif

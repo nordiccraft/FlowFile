@@ -174,15 +174,29 @@ struct FlowFileApp: App {
                     workspace.activeTab.isFilterBarVisible.toggle()
                 }
                 .keyboardShortcut("f", modifiers: [.command])
+
+                Button(workspace.tr("Dypsøk i undermapper & filinnhold...", "Deep Subfolder & Content Search...")) {
+                    workspace.openDeepSearch()
+                }
+                .keyboardShortcut("f", modifiers: [.command, .shift])
             }
 
-            CommandMenu("Visning") {
-                Button(workspace.isDualPane ? "Bytt til 1-Panel (Explorer)" : "Bytt til Dual-Pane (Total Commander)") {
+            CommandMenu(workspace.tr("Visning", "View")) {
+                Button(workspace.isDualPane
+                       ? workspace.tr("Bytt til enkeltpanel", "Switch to Single Pane")
+                       : workspace.tr("Bytt til topanelsvisning", "Switch to Dual-Pane")) {
                     withAnimation(.snappy(duration: 0.2)) {
                         workspace.toggleDualPane()
                     }
                 }
                 .keyboardShortcut("d", modifiers: [.command])
+
+                Button(workspace.activeTab.isFlatBranchView
+                       ? workspace.tr("Avslutt flat undermappe-visning", "Exit Flat Subfolder View")
+                       : workspace.tr("Flat visning (alle filer fra undermapper)", "Flat Subfolder View")) {
+                    workspace.toggleFlatViewInActiveTab()
+                }
+                .keyboardShortcut("b", modifiers: [.command, .option])
 
                 Button(workspace.isSidebarVisible ? "Skjul venstre sidepanel" : "Vis venstre sidepanel") {
                     withAnimation(.snappy(duration: 0.2)) {
@@ -270,27 +284,61 @@ struct FlowFileApp: App {
                 .keyboardShortcut("l", modifiers: [.command, .option])
             }
 
-            CommandMenu("Commander") {
-                Button("Multi-Rename Tool (Masse-omdøping)...") {
+            CommandMenu(workspace.tr("Verktøy", "Tools")) {
+                Button(workspace.tr("Dypsøk i undermapper & filinnhold...", "Deep Subfolder & Content Search...")) {
+                    workspace.openDeepSearch()
+                }
+
+                Button(workspace.tr("Diskplass-analyse...", "Disk Space Analyzer...")) {
+                    workspace.openDiskSpaceAnalyzer()
+                }
+                .keyboardShortcut("d", modifiers: [.command, .option])
+
+                Button(workspace.tr("Finn duplikatfiler (SHA-256)...", "Find Duplicate Files (SHA-256)...")) {
+                    workspace.openDuplicateFinder()
+                }
+
+                Divider()
+
+                Button(workspace.tr("Lagre gjeldende arbeidsområde...", "Save Current Workspace...")) {
+                    workspace.isSaveWorkspaceSheetVisible = true
+                }
+                .keyboardShortcut("s", modifiers: [.command, .option])
+
+                if !workspace.savedWorkspaces.isEmpty {
+                    Menu(workspace.tr("Åpne lagret arbeidsområde", "Open Saved Workspace")) {
+                        ForEach(workspace.savedWorkspaces) { saved in
+                            Button("\(saved.name) (\(saved.summaryLabel))") {
+                                workspace.applySavedWorkspace(saved)
+                            }
+                        }
+                    }
+                }
+
+                Divider()
+
+                Button(workspace.tr("Masse-omdøping...", "Batch Rename...")) {
                     workspace.openMultiRenameTool()
                 }
                 .keyboardShortcut("m", modifiers: [.command])
 
-                Button("Angre siste masse-omdøping") {
+                Button(workspace.tr("Angre siste masse-omdøping", "Undo Last Batch Rename")) {
                     workspace.undoLastBatchRename()
                 }
                 .disabled(workspace.lastBatchRename == nil)
 
                 Divider()
 
-                Button(workspace.isDropShelfVisible ? "Skjul Drop-hylle & Fil-kø" : "Vis Drop-hylle & Fil-kø") {
+                Button(workspace.isDropShelfVisible
+                       ? workspace.tr("Skjul Drop-hylle & Fil-kø", "Hide Drop Shelf & Queue")
+                       : workspace.tr("Vis Drop-hylle & Fil-kø", "Show Drop Shelf & Queue")) {
                     withAnimation(.snappy(duration: 0.2)) {
                         workspace.isDropShelfVisible.toggle()
                     }
                 }
                 .keyboardShortcut("j", modifiers: [.command])
 
-                Button("Legg valgte filer i Drop-hylle") {
+                Button(workspace.tr("Legg valgte filer i Drop-hylle", "Add Selected to Drop Shelf")) {
                     workspace.addSelectedToDropShelf()
                 }
                 .keyboardShortcut("d", modifiers: [.command, .shift])
@@ -299,24 +347,39 @@ struct FlowFileApp: App {
 
                 Button(workspace.isCompareActive
                        ? workspace.tr("Avslutt mappe-sammenligning", "Exit Folder Comparison")
-                       : workspace.tr("Sammenlign mapper i Dual-Pane", "Compare Folders in Dual-Pane")) {
+                       : workspace.tr("Sammenlign mapper i topanelsvisning", "Compare Folders in Dual-Pane")) {
                     workspace.toggleDualPaneComparison()
                 }
                 .keyboardShortcut("k", modifiers: [.command, .shift])
 
+                Button(workspace.tr("Synkroniser mapper...", "Synchronize Folders...")) {
+                    workspace.openFolderSync()
+                }
+                .keyboardShortcut("k", modifiers: [.command, .option, .shift])
+
                 Divider()
 
-                Button("Komprimer valgte til .zip") {
+                Button(workspace.tr("Konverter / skaler valgte bilder...", "Convert / Resize Selected Images...")) {
+                    workspace.openImageConverter()
+                }
+
+                Button(workspace.tr("Slå sammen valgte til én PDF", "Merge Selected into Single PDF")) {
+                    workspace.mergeSelectedToPDF()
+                }
+
+                Divider()
+
+                Button(workspace.tr("Komprimer valgte til .zip", "Compress Selected to .zip")) {
                     workspace.compressSelectedToZip()
                 }
 
-                Button("Pakk ut valgt arkiv her") {
+                Button(workspace.tr("Pakk ut valgt arkiv her", "Extract Selected Archive Here")) {
                     workspace.extractSelectedArchiveHere()
                 }
 
                 Divider()
 
-                Button("Bytt aktivt panel") {
+                Button(workspace.tr("Bytt aktivt panel", "Switch Active Pane")) {
                     workspace.switchActivePane()
                 }
                 .disabled(!workspace.isDualPane)
@@ -328,26 +391,28 @@ struct FlowFileApp: App {
 
                 Divider()
 
-                Button("Kopier til motsatt panel (F5)") {
+                Button(workspace.tr("Kopier til motsatt panel (F5)", "Copy to Opposite Pane (F5)")) {
                     workspace.copySelectedToOppositePane()
                 }
                 .keyboardShortcut("c", modifiers: [.command, .shift])
 
-                Button("Flytt til motsatt panel (F6)") {
+                Button(workspace.tr("Flytt til motsatt panel (F6)", "Move to Opposite Pane (F6)")) {
                     workspace.moveSelectedToOppositePane()
                 }
                 .keyboardShortcut("m", modifiers: [.command, .option])
 
                 Divider()
 
-                Button(workspace.isTerminalDrawerVisible ? "Skjul innebygd Terminal-skuff" : "Vis innebygd Terminal-skuff") {
+                Button(workspace.isTerminalDrawerVisible
+                       ? workspace.tr("Skjul innebygd Terminal-skuff", "Hide Embedded Terminal Drawer")
+                       : workspace.tr("Vis innebygd Terminal-skuff", "Show Embedded Terminal Drawer")) {
                     withAnimation(.snappy(duration: 0.2)) {
                         workspace.toggleTerminalDrawer()
                     }
                 }
                 .keyboardShortcut("`", modifiers: [.control])
 
-                Button("Åpne macOS Terminal i aktiv mappe") {
+                Button(workspace.tr("Åpne macOS Terminal i aktiv mappe", "Open macOS Terminal in Active Folder")) {
                     workspace.openTerminalInActiveFolder()
                 }
                 .keyboardShortcut("t", modifiers: [.command, .shift])
