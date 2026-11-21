@@ -1,6 +1,6 @@
 cask "flowfile" do
-  version "1.1.1"
-  sha256 "20202e331a4bb0e37cb84e0e0fbe35b4738385d4cb6830bfeb3f6a4ce35fe00e"
+  version "1.2.0"
+  sha256 "c0c8ee23803e81dd09463e6b660e4daf3a546e05e2ca56ff65571706baae3db5"
 
   url "https://github.com/nordiccraft/FlowFile/releases/download/v#{version}/FlowFile-Update.zip"
   name "FlowFile"
