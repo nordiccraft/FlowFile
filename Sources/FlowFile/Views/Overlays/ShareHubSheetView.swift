@@ -12,7 +12,8 @@ struct ShareHubSheetView: View {
     @Environment(\.dismiss) private var dismiss
 
     private var hasDirectoriesOrMultiple: Bool {
-        targetItems.count > 1 || targetItems.contains(where: \.isNavigableFolder)
+        // Packages (.app, .pages, .key, .rtfd) are directories too and must be zipped for single-file transports
+        targetItems.count > 1 || targetItems.contains(where: { $0.isNavigableFolder || $0.isDirectory || $0.isPackage })
     }
 
     private var hasImages: Bool {

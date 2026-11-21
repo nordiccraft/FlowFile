@@ -632,6 +632,13 @@ final class WorkspaceState {
             } else {
                 do {
                     let tempFile = try ArchiveService.extractForPreview(archiveURL: archiveURL, entryPath: entryPath)
+                    // Apps/scripts inside archives can run code: require explicit confirmation (Cancel is default)
+                    if QuarantineService.isPotentiallyExecutable(tempFile) {
+                        guard confirmOpeningExecutableFromArchive(named: tempFile.lastPathComponent) else {
+                            try? FileManager.default.removeItem(at: tempFile)
+                            return
+                        }
+                    }
                     NSWorkspace.shared.open(tempFile)
                 } catch {
                     alertErrorMessage = error.localizedDescription
@@ -654,6 +661,25 @@ final class WorkspaceState {
         } else {
             NSWorkspace.shared.open(destinationURL)
         }
+    }
+
+    /// Modal warning before launching an app/script that was extracted from inside an archive.
+    func confirmOpeningExecutableFromArchive(named name: String) -> Bool {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = tr(
+            "Åpne «\(name)» fra arkivet?",
+            "Open “\(name)” from the archive?"
+        )
+        alert.informativeText = tr(
+            "Dette er et program eller skript som kan kjøre kode på Macen din. Åpne det bare hvis du stoler på hvor arkivet kommer fra.",
+            "This is an app or script that can run code on your Mac. Only open it if you trust where the archive came from."
+        )
+        alert.addButton(withTitle: tr("Avbryt", "Cancel"))
+        alert.addButton(withTitle: tr("Åpne likevel", "Open Anyway"))
+        alert.buttons.first?.keyEquivalent = "\r"
+        alert.buttons.last?.keyEquivalent = ""
+        return alert.runModal() == .alertSecondButtonReturn
     }
 
     func openSelectedItems() {

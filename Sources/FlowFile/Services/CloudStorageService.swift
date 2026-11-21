@@ -144,6 +144,15 @@ enum CloudStorageService {
         return false
     }
 
+    /// True when the file's contents are not stored locally (reading it would trigger a cloud download).
+    static func isDatalessPlaceholder(_ url: URL) -> Bool {
+        var st = stat()
+        if lstat(url.path, &st) == 0 {
+            return (st.st_flags & UInt32(SF_DATALESS)) != 0
+        }
+        return false
+    }
+
     /// Detects cloud sync state without triggering file materialization/download!
     static func detectSyncState(
         for url: URL,

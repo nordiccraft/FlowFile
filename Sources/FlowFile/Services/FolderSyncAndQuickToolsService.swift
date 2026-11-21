@@ -73,6 +73,9 @@ struct FolderSyncItemPlan: Identifiable, Equatable {
 enum FolderSyncError: LocalizedError {
     case sameFolder
     case nestedFolders
+    case scanFailed(String)
+    case mirrorSourceEmpty
+    case trashUnavailable(String)
 
     var errorDescription: String? {
         switch self {
@@ -82,6 +85,21 @@ enum FolderSyncError: LocalizedError {
             return tr(
                 "Den ene mappen ligger inne i den andre. Velg to separate mapper før synkronisering.",
                 "One folder is nested inside the other. Please select two separate folders to synchronize."
+            )
+        case .scanFailed(let path):
+            return tr(
+                "Kunne ikke lese hele mappen «\(path)». Synkroniseringen er stoppet for å beskytte filene dine. Sjekk tilgang eller tilkobling og prøv igjen.",
+                "Could not read the entire folder “\(path)”. Synchronization was stopped to protect your files. Check access or connection and try again."
+            )
+        case .mirrorSourceEmpty:
+            return tr(
+                "Venstre mappe er tom. Speilmodus ville flyttet alt i høyre mappe til Papirkurven, så synkroniseringen er stoppet.",
+                "The left folder is empty. Mirror mode would move everything in the right folder to Trash, so synchronization was stopped."
+            )
+        case .trashUnavailable(let name):
+            return tr(
+                "«\(name)» kunne ikke flyttes til Papirkurven (disken har trolig ingen papirkurv). Ingenting ble slettet permanent.",
+                "“\(name)” could not be moved to Trash (the disk probably has no Trash). Nothing was permanently deleted."
             )
         }
     }
@@ -93,6 +111,37 @@ enum FolderSyncService {
         let relativePath: String
         let size: Int64
         let modified: Date
+    }
+
+    /// Resolves symlinks/firmlinks and returns the canonical, case-correct path for comparisons.
+    static func canonicalPath(_ url: URL) -> String {
+        let resolved = url.standardizedFileURL.resolvingSymlinksInPath()
+        if let canonical = (try? resolved.resourceValues(forKeys: [.canonicalPathKey]))?.canonicalPath {
+            return canonical
+        }
+        return resolved.path
+    }
+
+    /// True when `child` is the same as, or located inside, `parent` (case-insensitive, symlink-resolved, file-ID aware).
+    static func isSameOrInside(_ child: URL, _ parent: URL) -> Bool {
+        let c = canonicalPath(child).lowercased()
+        let p = canonicalPath(parent).lowercased()
+        if c == p { return true }
+        let pSlash = p.hasSuffix("/") ? p : p + "/"
+        if c.hasPrefix(pSlash) { return true }
+        // Fall back to file identity walk (handles hardlinked/firmlinked spellings)
+        guard let parentID = (try? parent.resourceValues(forKeys: [.fileResourceIdentifierKey]))?.fileResourceIdentifier else {
+            return false
+        }
+        var current = child.standardizedFileURL
+        while current.path != "/" {
+            if let id = (try? current.resourceValues(forKeys: [.fileResourceIdentifierKey]))?.fileResourceIdentifier,
+               id.isEqual(parentID) {
+                return true
+            }
+            current = current.deletingLastPathComponent()
+        }
+        return false
     }
 
     static func buildPlan(
@@ -120,23 +169,25 @@ enum FolderSyncService {
         let leftStd = leftRoot.standardizedFileURL
         let rightStd = rightRoot.standardizedFileURL
 
-        if leftStd.path == rightStd.path {
+        if canonicalPath(leftStd).lowercased() == canonicalPath(rightStd).lowercased() {
             throw FolderSyncError.sameFolder
         }
-        let leftSlash = leftStd.path.hasSuffix("/") ? leftStd.path : (leftStd.path + "/")
-        let rightSlash = rightStd.path.hasSuffix("/") ? rightStd.path : (rightStd.path + "/")
-        if leftStd.path.hasPrefix(rightSlash) || rightStd.path.hasPrefix(leftSlash) {
+        if isSameOrInside(leftStd, rightStd) || isSameOrInside(rightStd, leftStd) {
             throw FolderSyncError.nestedFolders
         }
 
-        let leftMap = scanRelativeFiles(under: leftStd, includeHidden: includeHidden)
-        let rightMap = scanRelativeFiles(under: rightStd, includeHidden: includeHidden)
+        let leftMap = try scanRelativeFiles(under: leftStd, includeHidden: includeHidden)
+        let rightMap = try scanRelativeFiles(under: rightStd, includeHidden: includeHidden)
+        if mode == .mirrorLeftToRight && leftMap.isEmpty && !rightMap.isEmpty {
+            throw FolderSyncError.mirrorSourceEmpty
+        }
         let allRelKeys = Set(leftMap.keys).union(rightMap.keys).sorted {
             $0.localizedStandardCompare($1) == .orderedAscending
         }
 
         var actions: [FolderSyncItemPlan] = []
-        let timestampTolerance: TimeInterval = 1.5
+        // FAT/exFAT store timestamps with 2-second granularity
+        let timestampTolerance: TimeInterval = 2.0
 
         for relKey in allRelKeys {
             let lFile = leftMap[relKey]
@@ -249,9 +300,13 @@ enum FolderSyncService {
     @discardableResult
     static func execute(
         plan: [FolderSyncItemPlan],
-        selectedIDs: Set<String>? = nil
+        selectedIDs: Set<String>? = nil,
+        trashItemHandler: ((URL) throws -> Void)? = nil
     ) throws -> Int {
         let fm = FileManager.default
+        let moveToTrash: (URL) throws -> Void = trashItemHandler ?? { url in
+            try fm.trashItem(at: url, resultingItemURL: nil)
+        }
         var completed = 0
 
         for step in plan {
@@ -267,19 +322,32 @@ enum FolderSyncService {
                 if !fm.fileExists(atPath: parentDir.path) {
                     try fm.createDirectory(at: parentDir, withIntermediateDirectories: true)
                 }
-                if fm.fileExists(atPath: dst.path) {
-                    // Move previous version to Trash when possible before copying updated file
-                    if (try? fm.trashItem(at: dst, resultingItemURL: nil)) == nil {
-                        try fm.removeItem(at: dst)
+                // 1. Copy to a hidden temp sibling first, so a failed copy never destroys the existing file
+                let tempURL = parentDir.appendingPathComponent(".flowfile-sync-\(UUID().uuidString.prefix(8))-\(dst.lastPathComponent)")
+                try fm.copyItem(at: src, to: tempURL)
+                do {
+                    if fm.fileExists(atPath: dst.path) {
+                        // 2. Old version goes to Trash. Never fall back to permanent deletion silently.
+                        do {
+                            try moveToTrash(dst)
+                        } catch {
+                            throw FolderSyncError.trashUnavailable(dst.lastPathComponent)
+                        }
                     }
+                    // 3. Atomically move the verified copy into place
+                    try fm.moveItem(at: tempURL, to: dst)
+                } catch {
+                    try? fm.removeItem(at: tempURL)
+                    throw error
                 }
-                try fm.copyItem(at: src, to: dst)
                 completed += 1
 
             case .trashInRight:
                 if fm.fileExists(atPath: step.destinationURL.path) {
-                    if (try? fm.trashItem(at: step.destinationURL, resultingItemURL: nil)) == nil {
-                        try fm.removeItem(at: step.destinationURL)
+                    do {
+                        try moveToTrash(step.destinationURL)
+                    } catch {
+                        throw FolderSyncError.trashUnavailable(step.destinationURL.lastPathComponent)
                     }
                     completed += 1
                 }
@@ -292,7 +360,7 @@ enum FolderSyncService {
     private static func scanRelativeFiles(
         under root: URL,
         includeHidden: Bool
-    ) -> [String: ScannedSyncFile] {
+    ) throws -> [String: ScannedSyncFile] {
         let fm = FileManager.default
         let keys: [URLResourceKey] = [
             .isRegularFileKey,
@@ -305,18 +373,30 @@ enum FolderSyncService {
         ]
         let keySet = Set(keys)
 
+        var isDir: ObjCBool = false
+        guard fm.fileExists(atPath: root.path, isDirectory: &isDir), isDir.boolValue,
+              fm.isReadableFile(atPath: root.path),
+              (try? fm.contentsOfDirectory(atPath: root.path)) != nil else {
+            throw FolderSyncError.scanFailed(root.path)
+        }
+
         var options: FileManager.DirectoryEnumerationOptions = [.skipsPackageDescendants]
         if !includeHidden {
             options.insert(.skipsHiddenFiles)
         }
 
+        // Any unreadable subfolder aborts the whole plan (fail closed) instead of silently looking "empty"
+        var firstScanErrorPath: String? = nil
         guard let enumerator = fm.enumerator(
             at: root,
             includingPropertiesForKeys: keys,
             options: options,
-            errorHandler: { _, _ in true }
+            errorHandler: { url, _ in
+                if firstScanErrorPath == nil { firstScanErrorPath = url.path }
+                return false
+            }
         ) else {
-            return [:]
+            throw FolderSyncError.scanFailed(root.path)
         }
 
         let rootPrefix = root.path.hasSuffix("/") ? root.path : (root.path + "/")
@@ -344,7 +424,9 @@ enum FolderSyncService {
             }
 
             let rel = String(std.path.dropFirst(rootPrefix.count))
-            let normalizedKey = rel.lowercased()
+            if rel.hasPrefix(".flowfile-sync-") || rel.contains("/.flowfile-sync-") { continue }
+            // Normalize Unicode (NFC vs NFD on SMB/exFAT) + case so the same file never appears twice
+            let normalizedKey = rel.precomposedStringWithCanonicalMapping.lowercased()
             map[normalizedKey] = ScannedSyncFile(
                 url: std,
                 relativePath: rel,
@@ -353,6 +435,9 @@ enum FolderSyncService {
             )
         }
 
+        if let firstScanErrorPath {
+            throw FolderSyncError.scanFailed(firstScanErrorPath)
+        }
         return map
     }
 }

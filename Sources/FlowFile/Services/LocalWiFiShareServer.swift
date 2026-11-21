@@ -283,14 +283,16 @@ final class LocalWiFiShareServer {
         var ptr: UnsafeMutablePointer<ifaddrs>? = firstAddr
         while let current = ptr {
             let interface = current.pointee
-            let addrFamily = interface.ifa_addr.pointee.sa_family
+            ptr = interface.ifa_next
+            guard let sockAddr = interface.ifa_addr else { continue }
+            let addrFamily = sockAddr.pointee.sa_family
             if addrFamily == UInt8(AF_INET) {
                 let name = String(cString: interface.ifa_name)
                 if name != "lo0" {
                     var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
                     if getnameinfo(
-                        interface.ifa_addr,
-                        socklen_t(interface.ifa_addr.pointee.sa_len),
+                        sockAddr,
+                        socklen_t(sockAddr.pointee.sa_len),
                         &hostname,
                         socklen_t(hostname.count),
                         nil,
@@ -298,16 +300,17 @@ final class LocalWiFiShareServer {
                         NI_NUMERICHOST
                     ) == 0 {
                         let ip = String(cString: hostname)
+                        // Skip link-local self-assigned addresses that other devices can't reach
+                        if ip.hasPrefix("169.254.") { continue }
                         if name == "en0" || name == "en1" {
                             return ip
                         }
-                        if fallback == nil {
+                        if fallback == nil && !name.hasPrefix("utun") && !name.hasPrefix("bridge") {
                             fallback = ip
                         }
                     }
                 }
             }
-            ptr = interface.ifa_next
         }
         return fallback
     }

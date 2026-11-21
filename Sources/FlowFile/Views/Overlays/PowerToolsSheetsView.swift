@@ -570,6 +570,7 @@ struct DiskSpaceSheetView: View {
     @State private var isAnalyzing: Bool = false
     @State private var showLargestFilesTab: Bool = false
     @State private var analyzeTask: Task<Void, Never>? = nil
+    @State private var pendingTrashEntry: DiskSpaceEntry? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -713,14 +714,18 @@ struct DiskSpaceSheetView: View {
                                         .controlSize(.small)
 
                                         Button(role: .destructive) {
-                                            trashEntry(entry)
+                                            pendingTrashEntry = entry
                                         } label: {
                                             Image(systemName: "trash")
-                                                .foregroundStyle(.red)
+                                                .foregroundStyle(DiskSpaceSheetView.isProtected(entry.url) ? Color.secondary : Color.red)
                                         }
                                         .buttonStyle(.glass)
                                         .controlSize(.small)
-                                        .help(workspace.tr("Flytt til Papirkurv", "Move to Trash"))
+                                        .disabled(DiskSpaceSheetView.isProtected(entry.url))
+                                        .help(DiskSpaceSheetView.isProtected(entry.url)
+                                              ? workspace.tr("Beskyttet systemmappe eller hjemmemappe", "Protected system or home folder")
+                                              : workspace.tr("Flytt til Papirkurv", "Move to Trash"))
+                                        .accessibilityLabel(workspace.tr("Flytt \(entry.name) til Papirkurv", "Move \(entry.name) to Trash"))
                                     }
 
                                     GeometryReader { geo in
@@ -763,6 +768,55 @@ struct DiskSpaceSheetView: View {
         .onDisappear {
             analyzeTask?.cancel()
         }
+        .confirmationDialog(
+            workspace.tr(
+                "Flytte «\(pendingTrashEntry?.name ?? "")» til Papirkurven?",
+                "Move “\(pendingTrashEntry?.name ?? "")” to Trash?"
+            ),
+            isPresented: Binding(
+                get: { pendingTrashEntry != nil },
+                set: { if !$0 { pendingTrashEntry = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button(workspace.tr("Flytt til Papirkurv", "Move to Trash"), role: .destructive) {
+                if let entry = pendingTrashEntry {
+                    trashEntry(entry)
+                }
+                pendingTrashEntry = nil
+            }
+            Button(workspace.tr("Avbryt", "Cancel"), role: .cancel) {
+                pendingTrashEntry = nil
+            }
+        } message: {
+            if let entry = pendingTrashEntry {
+                Text(workspace.tr(
+                    "\(ByteFormatter.string(fromByteCount: entry.sizeBytes))\(entry.isDirectory ? " • \(entry.itemCount) filer" : "")\n\(entry.url.path)",
+                    "\(ByteFormatter.string(fromByteCount: entry.sizeBytes))\(entry.isDirectory ? " • \(entry.itemCount) files" : "")\n\(entry.url.path)"
+                ))
+            }
+        }
+    }
+
+    /// Home folder, its standard top-level folders and system locations can never be trashed from the analyzer.
+    nonisolated static func isProtected(_ url: URL) -> Bool {
+        let path = url.standardizedFileURL.resolvingSymlinksInPath().path
+        let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.resolvingSymlinksInPath().path
+        let protectedHomeChildren = [
+            "Library", "Documents", "Desktop", "Downloads", "Pictures", "Movies", "Music",
+            "Applications", "Public", ".Trash"
+        ]
+        if path == "/" || path == home { return true }
+        if protectedHomeChildren.contains(where: { path == home + "/" + $0 }) { return true }
+        let systemPrefixes = ["/System", "/Library", "/Applications", "/usr", "/bin", "/sbin", "/private", "/etc", "/var", "/Users", "/Volumes", "/cores", "/opt"]
+        if systemPrefixes.contains(path) { return true }
+        if path.hasPrefix("/System/") || path.hasPrefix("/usr/") || path.hasPrefix("/bin/") || path.hasPrefix("/sbin/") {
+            return true
+        }
+        if path.hasPrefix("/Volumes/"), url.standardizedFileURL.deletingLastPathComponent().path == "/Volumes" {
+            return true
+        }
+        return false
     }
 
     private func barColor(for fraction: Double) -> Color {
@@ -786,6 +840,7 @@ struct DiskSpaceSheetView: View {
 
     private func trashEntry(_ entry: DiskSpaceEntry) {
         guard workspace.guardNotInTourSandbox() else { return }
+        guard !DiskSpaceSheetView.isProtected(entry.url) else { return }
         do {
             try FileSystemService.trashItems([entry.url])
             workspace.refreshAllTabs()
@@ -808,6 +863,7 @@ struct FolderSyncSheetView: View {
     @State private var isScanning: Bool = false
     @State private var isExecuting: Bool = false
     @State private var scanError: String? = nil
+    @State private var showTrashConfirmation: Bool = false
 
     private var leftRoot: URL { workspace.leftPane.activeTab.currentURL }
     private var rightRoot: URL { workspace.rightPane.activeTab.currentURL }
@@ -967,11 +1023,14 @@ struct FolderSyncSheetView: View {
                 Spacer()
 
                 Button(workspace.tr("Utfør synkronisering", "Run Synchronization")) {
-                    executeSync()
+                    if selectedTrashCount > 0 {
+                        showTrashConfirmation = true
+                    } else {
+                        executeSync()
+                    }
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(selectedIDs.isEmpty || isScanning || isExecuting || scanError != nil)
-                .keyboardShortcut(.defaultAction)
             }
         }
         .padding(20)
@@ -979,6 +1038,28 @@ struct FolderSyncSheetView: View {
         .onAppear {
             refreshPlan()
         }
+        .confirmationDialog(
+            workspace.tr(
+                "Flytte \(selectedTrashCount) fil(er) i høyre mappe til Papirkurven?",
+                "Move \(selectedTrashCount) file(s) in the right folder to Trash?"
+            ),
+            isPresented: $showTrashConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button(workspace.tr("Synkroniser og flytt til Papirkurv", "Sync and Move to Trash"), role: .destructive) {
+                executeSync()
+            }
+            Button(workspace.tr("Avbryt", "Cancel"), role: .cancel) {}
+        } message: {
+            Text(workspace.tr(
+                "Filene finnes kun i høyre mappe (\(rightRoot.lastPathComponent)). De flyttes til Papirkurven og kan legges tilbake derfra. Hvis disken ikke har papirkurv, stopper synkroniseringen uten å slette noe.",
+                "These files exist only in the right folder (\(rightRoot.lastPathComponent)). They are moved to Trash and can be restored from there. If the disk has no Trash, synchronization stops without deleting anything."
+            ))
+        }
+    }
+
+    private var selectedTrashCount: Int {
+        plannedItems.filter { $0.operation == .trashInRight && selectedIDs.contains($0.id) }.count
     }
 
     @ViewBuilder
@@ -1029,7 +1110,8 @@ struct FolderSyncSheetView: View {
                     includeHidden: includeHidden
                 )
                 plannedItems = plan
-                selectedIDs = Set(plan.map(\.id))
+                // Never pre-check destructive rows; the user must opt in to trashing explicitly
+                selectedIDs = Set(plan.filter { $0.operation != .trashInRight }.map(\.id))
                 isScanning = false
             } catch {
                 plannedItems = []
@@ -1054,7 +1136,9 @@ struct FolderSyncSheetView: View {
             dismiss()
         } catch {
             isExecuting = false
+            workspace.refreshAllTabs()
             workspace.alertErrorMessage = error.localizedDescription
+            refreshPlan()
         }
     }
 }
@@ -1071,6 +1155,7 @@ struct DuplicateFinderSheetView: View {
     @State private var isScanning: Bool = false
     @State private var hasScannedOnce: Bool = false
     @State private var scanTask: Task<Void, Never>? = nil
+    @State private var showDuplicateTrashConfirmation: Bool = false
 
     private var totalReclaimableBytes: Int64 {
         groups.reduce(Int64(0)) { $0 + $1.reclaimableBytes }
@@ -1239,7 +1324,7 @@ struct DuplicateFinderSheetView: View {
                     Spacer()
 
                     Button(role: .destructive) {
-                        moveSelectedDuplicatesToTrash()
+                        showDuplicateTrashConfirmation = true
                     } label: {
                         Label(
                             workspace.tr("Flytt valgte til Papirkurv", "Move Selected to Trash"),
@@ -1248,7 +1333,15 @@ struct DuplicateFinderSheetView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(.red)
-                    .disabled(selectedForTrash.isEmpty)
+                    .disabled(selectedForTrash.isEmpty || !everyGroupKeepsOneCopy)
+                }
+                if !selectedForTrash.isEmpty && !everyGroupKeepsOneCopy {
+                    Text(workspace.tr(
+                        "Minst én gruppe har alle kopier valgt. Behold minst én kopi i hver gruppe.",
+                        "At least one group has every copy selected. Keep at least one copy in each group."
+                    ))
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(.orange)
                 }
             }
         }
@@ -1259,6 +1352,36 @@ struct DuplicateFinderSheetView: View {
         }
         .onDisappear {
             scanTask?.cancel()
+        }
+        .confirmationDialog(
+            workspace.tr(
+                "Flytte \(selectedForTrash.count) duplikatfil(er) til Papirkurven?",
+                "Move \(selectedForTrash.count) duplicate file(s) to Trash?"
+            ),
+            isPresented: $showDuplicateTrashConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button(workspace.tr("Flytt til Papirkurv", "Move to Trash"), role: .destructive) {
+                moveSelectedDuplicatesToTrash()
+            }
+            Button(workspace.tr("Avbryt", "Cancel"), role: .cancel) {}
+        } message: {
+            Text(workspace.tr(
+                "Totalt \(ByteFormatter.string(fromByteCount: selectedTrashBytes)). Minst én kopi beholdes i hver gruppe, og filene kan legges tilbake fra Papirkurven.",
+                "Total \(ByteFormatter.string(fromByteCount: selectedTrashBytes)). At least one copy is kept in each group, and files can be restored from Trash."
+            ))
+        }
+    }
+
+    private var everyGroupKeepsOneCopy: Bool {
+        groups.allSatisfy { group in
+            group.items.contains { !selectedForTrash.contains($0.url) }
+        }
+    }
+
+    private var selectedTrashBytes: Int64 {
+        groups.reduce(Int64(0)) { sum, group in
+            sum + Int64(group.items.filter { selectedForTrash.contains($0.url) }.count) * group.sizeBytes
         }
     }
 
@@ -1284,7 +1407,8 @@ struct DuplicateFinderSheetView: View {
             )
             if !Task.isCancelled {
                 groups = found
-                selectedForTrash = DuplicateFinderService.urlsToTrashKeepingNewest(in: found)
+                // Never auto-select files for deletion; the user picks a rule explicitly
+                selectedForTrash = []
                 isScanning = false
             }
         }
@@ -1293,7 +1417,7 @@ struct DuplicateFinderSheetView: View {
     private func moveSelectedDuplicatesToTrash() {
         guard workspace.guardNotInTourSandbox() else { return }
         let urls = Array(selectedForTrash)
-        guard !urls.isEmpty else { return }
+        guard !urls.isEmpty, everyGroupKeepsOneCopy else { return }
         do {
             try FileSystemService.trashItems(urls)
             workspace.refreshAllTabs()

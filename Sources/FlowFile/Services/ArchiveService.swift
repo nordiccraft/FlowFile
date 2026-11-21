@@ -218,7 +218,11 @@ enum ArchiveService {
         case .zip:
             var args = ["-q", "-o", archiveURL.path]
             for item in validatedEntries {
-                let escaped = escapeArchiveGlob(item.cleanPath)
+                var escaped = escapeArchiveGlob(item.cleanPath)
+                // unzip parses options even after the archive name; "[-]" matches a literal leading dash
+                if escaped.hasPrefix("-") {
+                    escaped = "[-]" + escaped.dropFirst()
+                }
                 if item.isDirHint {
                     args.append("\(escaped)/*")
                 } else {
@@ -261,6 +265,8 @@ enum ArchiveService {
             try fm.moveItem(at: extractedAt, to: target)
             movedResults.append(target)
         }
+        // Keep Gatekeeper protection: extracted items inherit the archive's quarantine flag
+        QuarantineService.propagate(from: archiveURL, to: movedResults)
         return movedResults
     }
 
@@ -305,6 +311,7 @@ enum ArchiveService {
             case .tar:
                 _ = try runProcess("/usr/bin/tar", arguments: ["-xf", archiveURL.path, "-C", targetFolder.path])
             }
+            QuarantineService.propagate(from: archiveURL, to: [targetFolder])
             return targetFolder
         } catch {
             try? FileManager.default.removeItem(at: targetFolder)
@@ -325,9 +332,11 @@ enum ArchiveService {
         )
 
         let sourceParent = urls[0].deletingLastPathComponent().standardizedFileURL
-        var args = ["-r", "-q", finalZipURL.path, "--"]
+        // -y stores symlinks as links instead of following them (prevents leaking e.g. ~/.ssh via a symlink)
+        var args = ["-r", "-q", "-y", finalZipURL.path]
         for u in urls {
-            args.append(u.lastPathComponent)
+            let name = u.lastPathComponent
+            args.append(name.hasPrefix("-") ? "./\(name)" : name)
         }
 
         do {

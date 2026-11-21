@@ -142,13 +142,15 @@ enum ShareHubService {
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
         proc.currentDirectoryURL = stagingDir
 
-        // -X strips extra macOS Finder/UID attributes; -x excludes .DS_Store & __MACOSX for 100% clean Windows zips!
-        var args: [String] = ["-r", "-q", "-X", zipOutputURL.path]
+        // -X strips extra macOS Finder/UID attributes; -y stores symlinks as links (never follows them, so a
+        // symlink to e.g. ~/.ssh can't leak private files); -x excludes macOS junk and hidden files/folders inside
+        // shared folders (.git history, .env secrets, .ssh keys). Explicitly selected top-level items are kept.
+        var args: [String] = ["-r", "-q", "-X", "-y", zipOutputURL.path]
         for staged in stagedURLs {
             let name = staged.lastPathComponent
             args.append(name.hasPrefix("-") ? "./\(name)" : name)
         }
-        args.append(contentsOf: ["-x", "*.DS_Store", "*__MACOSX*", "*/._*", "._*"])
+        args.append(contentsOf: ["-x", "*.DS_Store", "*__MACOSX*", "*/._*", "._*", "*/.*"])
         proc.arguments = args
 
         do {

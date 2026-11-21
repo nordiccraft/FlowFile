@@ -183,11 +183,37 @@ final class TerminalSession {
         currentDirectory = standardized
         guard isRunning, masterFD >= 0 else { return }
 
+        // Paths are typed into a TTY: control characters (^U kill-line, ^C, ESC, newline ...) are interpreted by the
+        // terminal line discipline BEFORE shell quoting applies, so a crafted folder name could inject commands.
+        guard Self.isSafeToTypeIntoTerminal(standardized.path) else {
+            appendSystemNotice(tr(
+                "[FlowFile] Mappenavnet inneholder kontrolltegn – automatisk «cd» er hoppet over av sikkerhetshensyn.",
+                "[FlowFile] The folder name contains control characters – automatic “cd” was skipped for security."
+            ))
+            return
+        }
+
         let escaped = standardized.path.replacingOccurrences(of: "'", with: "'\\''")
-        let cmd = "cd '\(escaped)'\n"
+        let cmd = "cd -- '\(escaped)'\n"
         cmd.withCString { ptr in
             _ = Darwin.write(masterFD, ptr, strlen(ptr))
         }
+    }
+
+    /// Rejects C0 controls (incl. newline/tab), DEL and C1 controls, and paths longer than the TTY canonical limit.
+    static func isSafeToTypeIntoTerminal(_ path: String) -> Bool {
+        if path.utf8.count > 900 { return false }
+        for scalar in path.unicodeScalars {
+            let v = scalar.value
+            if v < 0x20 || v == 0x7F || (0x80...0x9F).contains(v) {
+                return false
+            }
+        }
+        return true
+    }
+
+    private func appendSystemNotice(_ text: String) {
+        outputText += "\n" + text + "\n"
     }
 
     func clearOutput() {

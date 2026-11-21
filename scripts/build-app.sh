@@ -135,7 +135,9 @@ EOF
 chmod -R u+rwX,go+rX "$BUNDLE_DIR"
 
 if [[ "$SIGN_IDENTITY" == "-" ]]; then
-    codesign --force --deep --sign - "$BUNDLE_DIR"
+    # Ad-hoc builds also use Hardened Runtime so other processes cannot inject code (DYLD_INSERT_LIBRARIES)
+    # and borrow FlowFile's privacy permissions (e.g. Full Disk Access).
+    codesign --force --deep --options runtime --entitlements "$ENTITLEMENTS_FILE" --sign - "$BUNDLE_DIR"
 else
     codesign --force --deep --options runtime --entitlements "$ENTITLEMENTS_FILE" --sign "$SIGN_IDENTITY" "$BUNDLE_DIR"
 fi

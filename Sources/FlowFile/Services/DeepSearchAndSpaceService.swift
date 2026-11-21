@@ -139,7 +139,8 @@ enum DeepSearchService {
             if !trimmedContent.isEmpty {
                 guard rv.isRegularFile == true,
                       logicalSize > 0,
-                      logicalSize <= maxContentInspectBytes else {
+                      logicalSize <= maxContentInspectBytes,
+                      !CloudStorageService.isDatalessPlaceholder(url) else {
                     continue
                 }
                 let ext = url.pathExtension.lowercased()
@@ -453,6 +454,13 @@ enum DuplicateFinderService {
         // Stage 1: Group regular files by exact byte size
         var bySize: [Int64: [FileItem]] = [:]
         var seenPaths = Set<String>()
+        // Physical file identity (inode/volume): the same file reached via two path spellings,
+        // symlinked roots, firmlinks or hardlinks must never be treated as its own duplicate.
+        var seenFileIDs: [NSObject] = []
+        func alreadySeen(_ id: NSObject) -> Bool {
+            seenFileIDs.contains { $0.isEqual(id) }
+        }
+        var seenFileIDHashes = Set<Int>()
 
         for rawRoot in roots {
             if Task.isCancelled { break }
@@ -461,7 +469,7 @@ enum DuplicateFinderService {
 
             guard let enumerator = fm.enumerator(
                 at: root,
-                includingPropertiesForKeys: prefetchKeys,
+                includingPropertiesForKeys: prefetchKeys + [.fileResourceIdentifierKey],
                 options: options,
                 errorHandler: { _, _ in true }
             ) else { continue }
@@ -475,13 +483,22 @@ enum DuplicateFinderService {
                 }
                 let std = url.standardizedFileURL
                 guard !seenPaths.contains(std.path) else { continue }
-                guard let rv = try? std.resourceValues(forKeys: keySet),
+                guard let rv = try? std.resourceValues(forKeys: keySet.union([.fileResourceIdentifierKey])),
                       rv.isRegularFile == true,
                       rv.isSymbolicLink != true else {
                     continue
                 }
                 let size = Int64(rv.fileSize ?? 0)
                 guard size >= max(1, minFileSizeBytes) else { continue }
+                // Never download cloud-only placeholders just to hash them
+                if CloudStorageService.isDatalessPlaceholder(std) { continue }
+
+                if let fileID = rv.fileResourceIdentifier as? NSObject {
+                    let h = fileID.hash
+                    if seenFileIDHashes.contains(h) && alreadySeen(fileID) { continue }
+                    seenFileIDHashes.insert(h)
+                    seenFileIDs.append(fileID)
+                }
 
                 seenPaths.insert(std.path)
                 bySize[size, default: []].append(FileItem(url: std, resourceValues: rv))

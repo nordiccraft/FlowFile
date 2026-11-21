@@ -2,6 +2,14 @@
 
 Alle viktige nyheter, forbedringer og feilrettinger i FlowFile dokumenteres her og vises direkte i oppdateringsvinduet i appen.
 
+## [1.1.1] - 2026-11-21
+
+- **Tryggere mappe-synkronisering:** Stopper umiddelbart hvis venstre mappe er utilgjengelig eller tom i speilmodus, sletter aldri filer permanent uten papirkurv, kopierer via midlertidig fil før atomisk erstatning, forhåndsvelger ikke slettinger og krever bekreftelse.
+- **Tryggere duplikat-finner og diskplass-analyse:** Gjenkjenner samme fysiske fil via fil-ID (hindrer at eneste kopi kan merkes som duplikat), hopper over filer som kun ligger i skyen, krever bekreftelse før flytting til Papirkurven, og beskytter hjemme- og systemmapper i diskplass-analysen.
+- **Sikkerhetsforbedringer for Git, arkiver og terminal:** Herdet Git-status som blokkerer usikre `.git/config`-oppsett (f.eks. `fsmonitor`/filtre), bevarer macOS karantene-merke ved utpakking av arkiver med advarsel før kjørbare filer åpnes fra innsiden av arkiv, og beskytter den innebygde terminalen mot kontrolltegn i mappenavn.
+- **Hardened Runtime og låst oppdateringskilde:** Bygges nå med Hardened Runtime for beskyttelse mot kodeinjeksjon, oppdateringskilden er låst til det offisielle FlowFile-repoet, og oppdateringsloggen er flyttet til `~/Library/Logs/FlowFile/update.log`.
+- **Tryggere deling-zip og QR-stabilitet:** Pakking til `.zip` følger ikke lenger snarveier og utelater skjulte filer som `.git`/`.env` i delte mapper, pakker `.app`/`.pages`-pakker riktig før QR-deling, og unngår ugyldige nettverksadresser.
+
 ## [1.1.0] - 2026-11-15
 
 - **Dypsøk i undermapper og filinnhold (`⇧⌘F`):** Rekursivt søk på filnavn, tekstinnhold inni filer (med forhåndsvisning av trefflinje), filstørrelse, endringsdato og fargetagger.

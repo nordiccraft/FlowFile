@@ -56,15 +56,15 @@ struct UpdateSheetView: View {
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
 
-                    TextField(
-                        "nordiccraft/FlowFile",
-                        text: Binding(
-                            get: { updater.updateSourceRepoOrURL },
-                            set: { updater.updateSourceRepoOrURL = $0 }
-                        )
-                    )
-                    .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 12, design: .monospaced))
+                    // Read-only: the update source is pinned to the official repository for security
+                    Text(updater.updateSourceRepoOrURL)
+                        .font(.system(size: 12, design: .monospaced))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .help(workspace.tr(
+                            "Oppdateringer hentes kun fra den offisielle FlowFile-kilden.",
+                            "Updates are only fetched from the official FlowFile source."
+                        ))
 
                     Button {
                         Task {

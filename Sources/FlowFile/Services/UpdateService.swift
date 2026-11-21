@@ -38,13 +38,9 @@ final class UpdateService: NSObject, URLSessionDownloadDelegate {
         }
     }
 
-    /// Format: "owner/repo" (e.g. "nordiccraft/FlowFile") or full HTTPS release API URL.
-    var updateSourceRepoOrURL: String {
-        didSet {
-            let trimmed = updateSourceRepoOrURL.trimmingCharacters(in: .whitespacesAndNewlines)
-            UserDefaults.standard.set(trimmed, forKey: "flowfile.updateSource.v2")
-        }
-    }
+    /// Official update repository ("owner/repo"). Pinned at build time; user defaults can NOT redirect updates,
+    /// so local malware cannot point FlowFile at a malicious update server.
+    let updateSourceRepoOrURL: String
 
     private var downloadContinuation: CheckedContinuation<URL, Error>?
     private var activeDownloadTask: URLSessionDownloadTask?
@@ -53,14 +49,33 @@ final class UpdateService: NSObject, URLSessionDownloadDelegate {
         (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "1.0.0"
     }
 
+    static let officialRepository = "nordiccraft/FlowFile"
+
     override init() {
         let autoCheck = UserDefaults.standard.object(forKey: "flowfile.autoCheckUpdates") as? Bool ?? true
-        let savedSource = UserDefaults.standard.string(forKey: "flowfile.updateSource.v2") ?? ""
-        let bundledSource = (Bundle.main.infoDictionary?["FFUpdateRepository"] as? String) ?? ""
-        let resolvedDefault = bundledSource.isEmpty ? "nordiccraft/FlowFile" : bundledSource
+        let bundledSource = ((Bundle.main.infoDictionary?["FFUpdateRepository"] as? String) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         self.checkAutomaticallyOnLaunch = autoCheck
-        self.updateSourceRepoOrURL = savedSource.isEmpty ? resolvedDefault : savedSource
+        self.updateSourceRepoOrURL = Self.isValidRepoSlug(bundledSource) ? bundledSource : Self.officialRepository
+        // Remove any legacy override written by older versions
+        UserDefaults.standard.removeObject(forKey: "flowfile.updateSource.v2")
         super.init()
+    }
+
+    static func isValidRepoSlug(_ value: String) -> Bool {
+        let parts = value.split(separator: "/", omittingEmptySubsequences: false)
+        guard parts.count == 2 else { return false }
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_."))
+        return parts.allSatisfy { !$0.isEmpty && $0.unicodeScalars.allSatisfy { allowed.contains($0) } }
+    }
+
+    /// Only GitHub-hosted release assets are accepted as download sources.
+    static func isTrustedAssetURL(_ url: URL) -> Bool {
+        guard url.scheme?.lowercased() == "https", let host = url.host?.lowercased() else { return false }
+        return host == "github.com"
+            || host == "api.github.com"
+            || host == "objects.githubusercontent.com"
+            || host == "release-assets.githubusercontent.com"
     }
 
     var hasVisibleUpdateBanner: Bool {
@@ -344,27 +359,13 @@ final class UpdateService: NSObject, URLSessionDownloadDelegate {
     // MARK: - Helpers
 
     private var effectiveSource: String {
-        let trimmed = updateSourceRepoOrURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmed.isEmpty { return trimmed }
-        return ((Bundle.main.infoDictionary?["FFUpdateRepository"] as? String) ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        updateSourceRepoOrURL
     }
 
     private func resolveEndpointURL(from source: String) -> URL? {
-        if source.lowercased().hasPrefix("https://") {
-            if let url = URL(string: source),
-               url.host?.lowercased() == "github.com" {
-                let parts = url.pathComponents.filter { $0 != "/" }
-                if parts.count >= 2 {
-                    return URL(string: "https://api.github.com/repos/\(parts[0])/\(parts[1])/releases/latest")
-                }
-            }
-            return URL(string: source)
-        }
-        let cleaned = source.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        let segments = cleaned.split(separator: "/")
-        guard segments.count == 2 else { return nil }
-        return URL(string: "https://api.github.com/repos/\(segments[0])/\(segments[1])/releases/latest")
+        // Only "owner/repo" slugs are accepted; arbitrary HTTPS endpoints are not allowed.
+        guard Self.isValidRepoSlug(source) else { return nil }
+        return URL(string: "https://api.github.com/repos/\(source)/releases/latest")
     }
 
     static func parseReleasePayload(data: Data) throws -> AppReleaseInfo {
@@ -384,20 +385,27 @@ final class UpdateService: NSObject, URLSessionDownloadDelegate {
         let published = (json["published_at"] as? String)
         let htmlURL = (json["html_url"] as? String).flatMap(URL.init(string:))
 
-        var zipURL = (json["zip_url"] as? String).flatMap(URL.init(string:))
+        var zipURL: URL? = nil
+        var fallbackZipURL: URL? = nil
         var checksumsURL: URL? = nil
 
         if let assets = json["assets"] as? [[String: Any]] {
             for asset in assets {
                 guard let name = (asset["name"] as? String)?.lowercased(),
                       let dlStr = asset["browser_download_url"] as? String,
-                      let dlURL = URL(string: dlStr) else { continue }
-                if name.hasSuffix(".zip") && zipURL == nil {
+                      let dlURL = URL(string: dlStr),
+                      isTrustedAssetURL(dlURL) else { continue }
+                if name == "flowfile-update.zip" {
                     zipURL = dlURL
+                } else if name.hasSuffix(".zip") && fallbackZipURL == nil {
+                    fallbackZipURL = dlURL
                 } else if name == "sha256sums.txt" {
                     checksumsURL = dlURL
                 }
             }
+        }
+        if zipURL == nil {
+            zipURL = fallbackZipURL
         }
 
         return AppReleaseInfo(
@@ -804,19 +812,27 @@ final class UpdateService: NSObject, URLSessionDownloadDelegate {
         Darwin.exit(0)
     }
 
+    /// Per-user log (not world-writable /tmp), opened with O_NOFOLLOW so a planted symlink can't redirect writes.
+    static var updateLogURL: URL {
+        let logs = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Logs/FlowFile", isDirectory: true)
+        return logs.appendingPathComponent("update.log")
+    }
+
     private static func appendUpdateLog(_ message: String) {
         let formatter = ISO8601DateFormatter()
         let line = "[\(formatter.string(from: Date()))] \(message)\n"
-        let logURL = URL(fileURLWithPath: "/tmp/flowfile-update.log")
-        if let data = line.data(using: .utf8) {
-            if FileManager.default.fileExists(atPath: logURL.path),
-               let handle = try? FileHandle(forWritingTo: logURL) {
-                defer { try? handle.close() }
-                _ = try? handle.seekToEnd()
-                try? handle.write(contentsOf: data)
-            } else {
-                try? data.write(to: logURL, options: .atomic)
-            }
+        let logURL = updateLogURL
+        try? FileManager.default.createDirectory(
+            at: logURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        let fd = open(logURL.path, O_WRONLY | O_CREAT | O_APPEND | O_NOFOLLOW | O_CLOEXEC, 0o600)
+        guard fd >= 0 else { return }
+        defer { close(fd) }
+        line.withCString { ptr in
+            _ = Darwin.write(fd, ptr, strlen(ptr))
         }
     }
 }
