@@ -842,6 +842,7 @@ enum FlowFileVerificationSuite {
         try await deepSearchFlatViewDiskSpaceAndDuplicates()
         try await folderSyncAndQuickFileTools()
         try await safetyAndSecurityHardening()
+        try await sharingRedesignAndWiFiServer()
     }
 
     // MARK: - 17: v1.1.1 Data-safety & security hardening
@@ -1006,6 +1007,142 @@ enum FlowFileVerificationSuite {
             try expect(UpdateService.updateLogURL.path.contains("/Library/Logs/FlowFile/"))
         }
     }
+
+    // MARK: - 18: v1.2.0 Sharing Redesign (UTF-8 Zip, Lossless GPS Strip, Cloud Isolation, LAN Range/PIN)
+
+    static func sharingRedesignAndWiFiServer() async throws {
+        try await withTempDir { tempDir in
+            let fm = FileManager.default
+
+            // 1. Folder share -> UTF-8 ZIP excludes .env/symlinks and sets bit 11 (0x0800) for Windows compatibility
+            let secretOutside = tempDir.appendingPathComponent("hemmelig_nøkkel.txt")
+            try Data("PRIVATE_KEY".utf8).write(to: secretOutside)
+
+            let shareFolder = tempDir.appendingPathComponent("Prosjekt_æøå", isDirectory: true)
+            try fm.createDirectory(at: shareFolder, withIntermediateDirectories: true)
+            try Data("hei".utf8).write(to: shareFolder.appendingPathComponent("Rapport_æøå.txt"))
+            try Data("SECRET=123".utf8).write(to: shareFolder.appendingPathComponent(".env"))
+            try fm.createSymbolicLink(
+                at: shareFolder.appendingPathComponent("lekkasje.txt"),
+                withDestinationURL: secretOutside
+            )
+
+            // Create a JPEG with real GPS metadata + an unstrip-able .mov file inside the folder
+            let photoURL = shareFolder.appendingPathComponent("feriebilde.jpg")
+            try writeTestJPEGWithGPS(to: photoURL)
+            try Data("fake video".utf8).write(to: shareFolder.appendingPathComponent("klipp.mov"))
+
+            let folderItem = FileItem(url: shareFolder, resourceValues: try shareFolder.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey]))
+            var opts = SharePreparationOptions()
+            opts.packageAsCleanZip = true
+            opts.archiveBaseName = "Leveranse_æøå"
+            opts.convertHeicAndStripGPS = true
+
+            let payload = try ShareHubService.preparePayload([folderItem], options: opts)
+            defer {
+                if let root = payload.stagingRoot { try? fm.removeItem(at: root) }
+            }
+            try expect(payload.urls.count == 1)
+            try expect(payload.excludedHiddenCount >= 1, ".env must be excluded")
+            try expect(payload.skippedSymlinksCount == 1, "External symlink must be skipped")
+            try expect(payload.cleanedImagesCount == 1, "JPEG inside folder must be stripped of GPS")
+            try expect(payload.uncleanedFiles.contains("klipp.mov"), "Uncleaned video must be reported")
+
+            // Verify ZIP UTF-8 flag bit 11 (0x0800) is set in the generated zip
+            let zipData = try Data(contentsOf: payload.urls[0])
+            let lfhSig = Data([0x50, 0x4B, 0x03, 0x04])
+            var foundUTF8Entry = false
+            var searchStart = 0
+            while let r = zipData.range(of: lfhSig, in: searchStart..<zipData.count) {
+                let offset = r.lowerBound
+                if offset + 30 <= zipData.count {
+                    let flags = UInt16(zipData[offset + 6]) | (UInt16(zipData[offset + 7]) << 8)
+                    let nameLen = Int(UInt16(zipData[offset + 26]) | (UInt16(zipData[offset + 27]) << 8))
+                    if offset + 30 + nameLen <= zipData.count {
+                        let nameBytes = zipData[(offset + 30)..<(offset + 30 + nameLen)]
+                        if nameBytes.contains(where: { $0 >= 0x80 }) {
+                            try expect((flags & 0x0800) != 0, "Non-ASCII ZIP entry must have UTF-8 flag bit 11 set")
+                            foundUTF8Entry = true
+                        }
+                    }
+                }
+                searchStart = offset + 4
+            }
+            try expect(foundUTF8Entry, "Expected at least one non-ASCII entry in UTF-8 zip")
+
+            // Verify lossless JPEG GPS stripping removed GPS dictionary completely
+            let strippedDir = tempDir.appendingPathComponent("Stripped", isDirectory: true)
+            try fm.createDirectory(at: strippedDir, withIntermediateDirectories: true)
+            let strippedJPG = ShareHubService.sanitizeAndConvertImageIfApplicable(sourceURL: photoURL, into: strippedDir)
+            try expect(strippedJPG != nil)
+            if let strippedJPG, let src = CGImageSourceCreateWithURL(strippedJPG as CFURL, nil),
+               let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any] {
+                try expect(props[kCGImagePropertyGPSDictionary] == nil, "GPS metadata must be stripped")
+            }
+
+            // 2. Cloud detection via symlink + Google Drive writable root + isolated per-share folder
+            let fakeCloudRoot = tempDir.appendingPathComponent("CloudStorage/OneDrive-Contoso", isDirectory: true)
+            let fakeCloudLink = tempDir.appendingPathComponent("OneDriveLink")
+            try fm.createDirectory(at: fakeCloudRoot, withIntermediateDirectories: true)
+            try fm.createSymbolicLink(at: fakeCloudLink, withDestinationURL: fakeCloudRoot)
+            let workAccount = CloudAccountItem(provider: .oneDrive, displayName: "OneDrive", subtitle: "Contoso AS", rootURL: fakeCloudRoot)
+            try expect(workAccount.fullDisplayName == "OneDrive – Contoso AS")
+            let viaSymlinkFile = fakeCloudLink.appendingPathComponent("rapport.docx")
+            try expect(CloudStorageService.cloudAccount(containing: viaSymlinkFile, accounts: [workAccount])?.id == workAccount.id)
+
+            let fakeGDrive = tempDir.appendingPathComponent("CloudStorage/GoogleDrive-user", isDirectory: true)
+            let minDisk = fakeGDrive.appendingPathComponent("Min disk", isDirectory: true)
+            try fm.createDirectory(at: minDisk, withIntermediateDirectories: true)
+            let gAccount = CloudAccountItem(provider: .googleDrive, displayName: "Google Drive", subtitle: "user@example.com", rootURL: fakeGDrive)
+            try expect(CloudStorageService.writableUploadRootURL(for: gAccount).standardizedFileURL == minDisk.standardizedFileURL)
+
+            let uploadResult = try ShareHubService.copyIntoCloudSharedFolder([secretOutside], account: gAccount, shareLabel: "Budsjett")
+            try expect(uploadResult.folder.path.hasPrefix(minDisk.path), "Google Drive upload must land inside Min disk")
+            try expect(uploadResult.folder.lastPathComponent.contains("Budsjett"), "Per-share isolated subfolder must be created")
+
+            // 3. LAN/QR helpers: Byte Range parsing, PIN, constant-time compare & NFC Content-Disposition
+            try expect(LocalWiFiShareServer.parseByteRange("bytes=0-99", totalSize: 1000) == 0...99)
+            try expect(LocalWiFiShareServer.parseByteRange("bytes=500-", totalSize: 1000) == 500...999)
+            try expect(LocalWiFiShareServer.parseByteRange("bytes=-200", totalSize: 1000) == 800...999)
+            try expect(LocalWiFiShareServer.parseByteRange("bytes=2000-3000", totalSize: 1000) == nil)
+            try expect(LocalWiFiShareServer.parseByteRange("bytes=0-10, 20-30", totalSize: 1000) == nil)
+            try expect(LocalWiFiShareServer.constantTimeEquals("abc123", "abc123"))
+            try expect(!LocalWiFiShareServer.constantTimeEquals("abc123", "abc124"))
+            let pin = LocalWiFiShareServer.generateFourDigitPIN()
+            try expect(pin.count == 4 && pin.allSatisfy(\.isNumber))
+            let cd = LocalWiFiShareServer.contentDispositionHeaderValue(for: "Rapport_æøå.txt")
+            try expect(cd.contains("filename=\"Rapport_aeoa.txt\""))
+            try expect(cd.contains("filename*=UTF-8''"))
+        }
+    }
+
+    private static func writeTestJPEGWithGPS(to url: URL) throws {
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let ctx = CGContext(
+            data: nil, width: 32, height: 32, bitsPerComponent: 8, bytesPerRow: 0,
+            space: colorSpace, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+        ) else {
+            throw TestAssertionError(description: "Failed to create CGContext")
+        }
+        ctx.setFillColor(NSColor.systemBlue.cgColor)
+        ctx.fill(CGRect(x: 0, y: 0, width: 32, height: 32))
+        guard let cgImg = ctx.makeImage(),
+              let dest = CGImageDestinationCreateWithURL(url as CFURL, UTType.jpeg.identifier as CFString, 1, nil) else {
+            throw TestAssertionError(description: "Failed to create JPEG destination")
+        }
+        let gpsProps: [CFString: Any] = [
+            kCGImagePropertyGPSDictionary: [
+                kCGImagePropertyGPSLatitude: 59.9139,
+                kCGImagePropertyGPSLatitudeRef: "N",
+                kCGImagePropertyGPSLongitude: 10.7522,
+                kCGImagePropertyGPSLongitudeRef: "E"
+            ]
+        ]
+        CGImageDestinationAddImage(dest, cgImg, gpsProps as CFDictionary)
+        guard CGImageDestinationFinalize(dest) else {
+            throw TestAssertionError(description: "Failed to finalize test JPEG")
+        }
+    }
 }
 
 #if canImport(XCTest)
@@ -1079,13 +1216,17 @@ final class FlowFileTests: XCTestCase {
     func testSafetyAndSecurityHardening() async throws {
         try await FlowFileVerificationSuite.safetyAndSecurityHardening()
     }
+
+    func testSharingRedesignAndWiFiServer() async throws {
+        try await FlowFileVerificationSuite.sharingRedesignAndWiFiServer()
+    }
 }
 #else
 @main
 struct LocalCLTTestRunner {
     static func main() async throws {
         try await FlowFileVerificationSuite.runAll()
-        print("ALL 17 FLOWFILE TEST SUITES PASSED")
+        print("ALL 18 FLOWFILE TEST SUITES PASSED")
     }
 }
 #endif

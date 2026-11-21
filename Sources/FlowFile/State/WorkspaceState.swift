@@ -172,6 +172,8 @@ final class WorkspaceState {
     var cloudAccounts: [CloudAccountItem] = []
     var isShareHubVisible: Bool = false
     var shareTargetItems: [FileItem] = []
+    /// Owned by WorkspaceState so local Wi-Fi QR sharing continues running after closing the Share Hub sheet.
+    let wifiShareServer = LocalWiFiShareServer()
 
     // v1.1 Power Tools & Saved Workspaces
     var savedWorkspaces: [SavedWorkspace] = [] {

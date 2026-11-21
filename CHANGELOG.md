@@ -2,6 +2,13 @@
 
 Alle viktige nyheter, forbedringer og feilrettinger i FlowFile dokumenteres her og vises direkte i oppdateringsvinduet i appen.
 
+## [1.2.0] - 2026-11-21
+
+- **Ny og robust QR- og Wi-Fi-deling:** Kjører nå videre i bakgrunnen med statusindikator og stoppknapp i bunnlinjen, har automatisk selvtest med snarvei til *Lokalt nettverk*-innstillingene, nettverksvelger når Macen har flere grensesnitt, valgfri 4-sifret PIN-kode, nedtelling med «+10 min»-forlengelse, støtte for gjenopptakelse (`HTTP Range`/`HEAD`), nedlastingslogg og veiledning ved bedrifts-/gjestenett.
+- **macOS Del-meny og tydeligere skydeling:** Ny «macOS Del…»-knapp som åpner alle systemets delingsutvidelser (Mail, AirDrop, Meldinger, iCloud, Outlook, OneDrive, Dropbox, Slack, Teams). Skykontoer skiller nå tydelig mellom privat- og jobbkonto, Google Drive skriver riktig inn i *Min disk*, og opplasting lager alltid en ny, isolert privat mappe med bekreftelse før opplasting.
+- **Tryggere klargjøring og personvern:** Asynkron bakgrunnsklargjøring (ingen frysing av appen), tapsfri fjerning av GPS/EXIF fra `.JPG`, rekursiv bildebehandling inne i mapper med ærlig rapport over filer som ikke kunne renses automatisk, og ekte UTF-8-flagging i `.zip`-filer slik at norske `æ/ø/å`-filnavn åpnes feilfritt på Windows.
+- **Bedre stabilitet og oversettelse:** Midlertidige delingsfiler slettes ikke lenger for tidlig under AirDrop/e-post/utklippstavle-overlevering, riktig systemikon for AirDrop, størrelsesvarsel for e-post over 20 MB, og full norsk/engelsk støtte i hele delingssenteret.
+
 ## [1.1.1] - 2026-11-21
 
 - **Tryggere mappe-synkronisering:** Stopper umiddelbart hvis venstre mappe er utilgjengelig eller tom i speilmodus, sletter aldri filer permanent uten papirkurv, kopierer via midlertidig fil før atomisk erstatning, forhåndsvelger ikke slettinger og krever bekreftelse.

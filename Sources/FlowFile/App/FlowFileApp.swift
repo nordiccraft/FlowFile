@@ -47,7 +47,9 @@ final class FlowFileAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        ShareHubService.cleanupStaleStagingDirectories(maxAgeSeconds: 0)
+        // Keep recent share staging files for the 24h grace period so AirDrop / Mail / Outlook / clipboard handoffs
+        // don't lose files if the user quits FlowFile immediately after sharing. Stale (>24h) folders are swept on launch.
+        ShareHubService.cleanupStaleStagingDirectories()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

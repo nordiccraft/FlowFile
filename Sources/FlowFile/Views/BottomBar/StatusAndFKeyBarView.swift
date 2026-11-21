@@ -90,6 +90,40 @@ struct StatusAndFKeyBarView: View {
                     }
 
                     HStack(spacing: 10) {
+                        if workspace.wifiShareServer.isRunning {
+                            HStack(spacing: 6) {
+                                Button {
+                                    workspace.isShareHubVisible = true
+                                } label: {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "qrcode")
+                                            .font(.system(size: 10.5, weight: .semibold))
+                                        Text(workspace.tr(
+                                            "QR aktiv (\(workspace.wifiShareServer.downloadCount))",
+                                            "QR live (\(workspace.wifiShareServer.downloadCount))"
+                                        ))
+                                        .font(.system(size: 11, weight: .semibold))
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                                .foregroundStyle(.green)
+                                .help(workspace.wifiShareServer.shareURLString)
+
+                                Button {
+                                    workspace.wifiShareServer.stop()
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(.secondary)
+                                }
+                                .buttonStyle(.plain)
+                                .help(workspace.tr("Stopp Wi-Fi QR-deling", "Stop Wi-Fi QR sharing"))
+                            }
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(Color.green.opacity(0.14)))
+                        }
+
                         if workspace.transferQueue.activeJobsCount > 0 {
                             Button {
                                 workspace.isDropShelfVisible = true

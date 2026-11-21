@@ -9,11 +9,18 @@ enum CloudProviderKind: String, Codable, Hashable {
     case iCloudDrive = "iCloud Drive"
     case other = "Skylagring"
 
+    var localizedName: String {
+        switch self {
+        case .other: return tr("Skylagring", "Cloud Storage")
+        default: return rawValue
+        }
+    }
+
     var systemImage: String {
         switch self {
         case .oneDrive: return "cloud.fill"
-        case .dropbox: return "shippingbox.and.arrow.backward.fill"
-        case .googleDrive: return "externaldrive.fill.badge.icloud"
+        case .dropbox: return "shippingbox.fill"
+        case .googleDrive: return "externaldrive.connected.to.line.below.fill"
         case .box: return "archivebox.fill"
         case .iCloudDrive: return "icloud.fill"
         case .other: return "cloud"
@@ -27,6 +34,15 @@ struct CloudAccountItem: Identifiable, Hashable {
     let displayName: String
     let subtitle: String?
     let rootURL: URL
+
+    /// Distinguishes multiple accounts of the same provider (e.g. "OneDrive – Contoso AS" vs "OneDrive – Personal").
+    var fullDisplayName: String {
+        if let subtitle, !subtitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           subtitle.lowercased() != displayName.lowercased() {
+            return "\(displayName) – \(subtitle)"
+        }
+        return displayName
+    }
 }
 
 enum CloudSyncState: Equatable, Hashable {
@@ -129,11 +145,60 @@ enum CloudStorageService {
     }
 
     static func cloudAccount(containing url: URL, accounts: [CloudAccountItem]) -> CloudAccountItem? {
-        let stdPath = url.standardizedFileURL.path
-        return accounts.first { account in
-            let rootPath = account.rootURL.path
-            return stdPath == rootPath || stdPath.hasPrefix(rootPath + "/")
+        let std = url.standardizedFileURL
+        let stdPath = std.path
+        let resolvedPath: String
+        let directResolved = std.resolvingSymlinksInPath().path
+        if directResolved != stdPath {
+            resolvedPath = directResolved
+        } else {
+            // If `url` itself does not exist yet, resolve its parent folder's symlinks too
+            let parentResolved = std.deletingLastPathComponent().resolvingSymlinksInPath().path
+            resolvedPath = (parentResolved as NSString).appendingPathComponent(std.lastPathComponent)
         }
+        return accounts.first { account in
+            let rootPath = account.rootURL.standardizedFileURL.path
+            let resolvedRoot = account.rootURL.standardizedFileURL.resolvingSymlinksInPath().path
+            return stdPath == rootPath
+                || stdPath.hasPrefix(rootPath + "/")
+                || resolvedPath == resolvedRoot
+                || resolvedPath.hasPrefix(resolvedRoot + "/")
+        }
+    }
+
+    /// Returns the writable root folder for an account.
+    /// For Google Drive FileProvider (`GoogleDrive-<email>`), the top level is read-only and holds
+    /// "My Drive" / "Min disk" (localized), so we target that writable subfolder automatically.
+    static func writableUploadRootURL(for account: CloudAccountItem) -> URL {
+        guard account.provider == .googleDrive else {
+            return account.rootURL
+        }
+        let fm = FileManager.default
+        let knownMyDriveNames = [
+            "My Drive", "Min disk", "Min stasjon", "Mitt drev",
+            "Meine Ablage", "Mon Drive", "Mi unidad", "Il mio Drive", "Mijn Drive"
+        ]
+        for name in knownMyDriveNames {
+            let candidate = account.rootURL.appendingPathComponent(name, isDirectory: true)
+            var isDir: ObjCBool = false
+            if fm.fileExists(atPath: candidate.path, isDirectory: &isDir), isDir.boolValue {
+                return candidate
+            }
+        }
+        // Fallback: pick first writable child directory if Google Drive uses another locale name
+        if let children = try? fm.contentsOfDirectory(
+            at: account.rootURL,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) {
+            if let writable = children.first(where: {
+                (try? $0.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+                    && fm.isWritableFile(atPath: $0.path)
+            }) {
+                return writable
+            }
+        }
+        return account.rootURL
     }
 
     static func isInsideAnyCloudFolder(_ url: URL) -> Bool {

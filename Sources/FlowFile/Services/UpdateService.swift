@@ -263,7 +263,7 @@ final class UpdateService: NSObject, URLSessionDownloadDelegate {
                 window.orderOut(nil)
             }
             UserDefaults.standard.synchronize()
-            ShareHubService.cleanupStaleStagingDirectories(maxAgeSeconds: 0)
+            ShareHubService.cleanupStaleStagingDirectories()
 
             Self.relaunchInstalledAppAndExit(at: destinationAppURL)
         } catch {
