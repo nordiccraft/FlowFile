@@ -429,18 +429,6 @@ final class TabState: Identifiable {
     }
 
     private func fuzzyMatch(query: String, in candidate: String) -> Bool {
-        if candidate.localizedCaseInsensitiveContains(query) {
-            return true
-        }
-        let lowerCandidate = candidate.lowercased()
-        let lowerQuery = query.lowercased()
-        var idx = lowerCandidate.startIndex
-        for ch in lowerQuery {
-            guard let found = lowerCandidate[idx...].firstIndex(of: ch) else {
-                return false
-            }
-            idx = lowerCandidate.index(after: found)
-        }
-        return true
+        FileNameMatcher.matches(query: query, in: candidate, allowFuzzy: true)
     }
 }

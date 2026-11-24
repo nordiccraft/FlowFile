@@ -675,12 +675,38 @@ enum FlowFileVerificationSuite {
             try FileManager.default.setAttributes([.modificationDate: olderDate], ofItemAtPath: f2.path)
             try FileManager.default.setAttributes([.modificationDate: newerDate], ofItemAtPath: f2Dup.path)
 
-            // 1. DeepSearchService content search
+            // 1. DeepSearchService content search + wildcard globs (*.apk, prefix, ?, multi-pattern) + symlink root
             let contentMatches = await DeepSearchService.search(
                 DeepSearchQuery(rootURL: tempDir, nameQuery: "", contentQuery: "HEMMELIG_FAKTURA_KODE")
             )
             try expect(contentMatches.count == 2)
             try expect(contentMatches.allSatisfy { ($0.matchedLinePreview ?? "").contains("HEMMELIG_FAKTURA_KODE") })
+
+            let apkFile = sub2.appendingPathComponent("MyApp-release.apk")
+            try Data("apk".utf8).write(to: apkFile)
+            defer { try? FileManager.default.removeItem(at: apkFile) }
+
+            let apkMatches = await DeepSearchService.search(DeepSearchQuery(rootURL: tempDir, nameQuery: "*.apk"))
+            try expect(apkMatches.count == 1 && apkMatches[0].item.name == "MyApp-release.apk")
+
+            let prefixMatches = await DeepSearchService.search(DeepSearchQuery(rootURL: tempDir, nameQuery: "myapp"))
+            try expect(prefixMatches.count == 1)
+
+            let multiPattern = await DeepSearchService.search(DeepSearchQuery(rootURL: tempDir, nameQuery: "*.apk; *.md"))
+            try expect(multiPattern.count == 2)
+
+            // Symlinked root folder must still return results
+            let symlinkRoot = tempDir.deletingLastPathComponent().appendingPathComponent("SymlinkSearch_\(UUID().uuidString)")
+            try FileManager.default.createSymbolicLink(at: symlinkRoot, withDestinationURL: tempDir)
+            defer { try? FileManager.default.removeItem(at: symlinkRoot) }
+            let viaSymlink = await DeepSearchService.search(DeepSearchQuery(rootURL: symlinkRoot, nameQuery: "*.apk"))
+            try expect(viaSymlink.count == 1)
+
+            // Quick filter in TabState also supports *.apk wildcards
+            let filterTab = TabState(initialURL: sub2, showHidden: false)
+            filterTab.filterQuery = "*.apk"
+            try expect(filterTab.displayedItems.count == 1 && filterTab.displayedItems[0].name == "MyApp-release.apk")
+            try FileManager.default.removeItem(at: apkFile)
 
             // 2. FlatBranchService & TabState flat toggle
             let flatItems = try FlatBranchService.listRecursiveFiles(at: tempDir, showHidden: false)

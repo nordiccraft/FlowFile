@@ -1,6 +1,85 @@
 import CryptoKit
 import Foundation
 
+// MARK: - Unified Filename & Wildcard Matcher (shared by Quick Filter ⌘F & Deep Search ⇧⌘F)
+
+enum FileNameMatcher {
+    /// Matches a filename against a user query supporting:
+    /// - Wildcard globs (`*.apk`, `faktura*2026*.pdf`, `img_??.png`)
+    /// - Multiple patterns separated by `;` or `,` (e.g. `*.apk; *.ipa`)
+    /// - Case-insensitive & NFC-normalized substring match
+    /// - Optional fuzzy subsequence match (used by instant folder filter)
+    static func matches(query: String, in candidate: String, allowFuzzy: Bool = false) -> Bool {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return true }
+
+        let nfcCandidate = candidate.precomposedStringWithCanonicalMapping
+        let subQueries: [String]
+        if trimmed.contains(";") || trimmed.contains(",") {
+            subQueries = trimmed
+                .split(whereSeparator: { $0 == ";" || $0 == "," })
+                .map { String($0).trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+        } else {
+            subQueries = [trimmed]
+        }
+
+        return subQueries.contains { single in
+            matchesSingle(pattern: single.precomposedStringWithCanonicalMapping, in: nfcCandidate, allowFuzzy: allowFuzzy)
+        }
+    }
+
+    private static func matchesSingle(pattern: String, in candidate: String, allowFuzzy: Bool) -> Bool {
+        if pattern.contains("*") || pattern.contains("?") {
+            return wildcardMatch(glob: pattern, candidate: candidate)
+        }
+        if candidate.localizedCaseInsensitiveContains(pattern) {
+            return true
+        }
+        guard allowFuzzy else { return false }
+        let lowerCandidate = candidate.lowercased()
+        let lowerQuery = pattern.lowercased()
+        var idx = lowerCandidate.startIndex
+        for ch in lowerQuery {
+            guard let found = lowerCandidate[idx...].firstIndex(of: ch) else {
+                return false
+            }
+            idx = lowerCandidate.index(after: found)
+        }
+        return true
+    }
+
+    private static func wildcardMatch(glob: String, candidate: String) -> Bool {
+        let pChars = Array(glob.lowercased())
+        let cChars = Array(candidate.lowercased())
+        var p = 0
+        var c = 0
+        var starIdx: Int? = nil
+        var matchIdx = 0
+
+        while c < cChars.count {
+            if p < pChars.count && (pChars[p] == "?" || pChars[p] == cChars[c]) {
+                p += 1
+                c += 1
+            } else if p < pChars.count && pChars[p] == "*" {
+                starIdx = p
+                matchIdx = c
+                p += 1
+            } else if let s = starIdx {
+                p = s + 1
+                matchIdx += 1
+                c = matchIdx
+            } else {
+                return false
+            }
+        }
+        while p < pChars.count && pChars[p] == "*" {
+            p += 1
+        }
+        return p == pChars.count
+    }
+}
+
 // MARK: - Feature 1: Deep Subfolder & File-Content Search (⇧⌘F)
 
 struct DeepSearchQuery: Equatable {
@@ -41,8 +120,13 @@ enum DeepSearchService {
 
     static func searchSync(_ query: DeepSearchQuery) -> [DeepSearchMatch] {
         let fm = FileManager.default
-        let root = query.rootURL.standardizedFileURL
+        // Resolve top-level symlinks (e.g. ~/OneDrive -> ~/Library/CloudStorage/...) because
+        // FileManager.enumerator(at:) returns 0 entries when given a symlink directly!
+        let root = query.rootURL.standardizedFileURL.resolvingSymlinksInPath()
         guard fm.fileExists(atPath: root.path) else { return [] }
+
+        let homePath = fm.homeDirectoryForCurrentUser.standardizedFileURL.resolvingSymlinksInPath().path
+        let isSearchingHomeRoot = (root.path == homePath)
 
         let prefetchKeys: [URLResourceKey] = [
             .isDirectoryKey,
@@ -57,7 +141,8 @@ enum DeepSearchService {
             .creationDateKey,
             .labelNumberKey
         ]
-        let keySet = Set(prefetchKeys + [.tagNamesKey])
+        let baseKeySet = Set(prefetchKeys)
+        let fullKeySet = Set(prefetchKeys + [.tagNamesKey])
 
         var options: FileManager.DirectoryEnumerationOptions = [.skipsPackageDescendants]
         if !query.includeHidden {
@@ -100,18 +185,26 @@ enum DeepSearchService {
                 enumerator.skipDescendants()
                 continue
             }
-
-            guard let rv = try? url.resourceValues(forKeys: keySet) else { continue }
-
-            // 1. Filename match
-            if !trimmedName.isEmpty && !fileName.localizedCaseInsensitiveContains(trimmedName) {
+            // When searching from Home (~), skip ~/Library (hundreds of thousands of caches/containers)
+            // unless the user explicitly navigated into ~/Library.
+            if isSearchingHomeRoot && fileName == "Library" && url.deletingLastPathComponent().standardizedFileURL.path == homePath {
+                enumerator.skipDescendants()
                 continue
             }
 
+            // 1. Filename match FIRST (zero extra syscalls / xattr reads for non-matching files!)
+            if !trimmedName.isEmpty && !FileNameMatcher.matches(query: trimmedName, in: fileName, allowFuzzy: false) {
+                continue
+            }
+
+            // Read base metadata (never silently drop a matching file if an optional key like .tagNamesKey fails)
+            let rv = (try? url.resourceValues(forKeys: query.colorTag != nil ? fullKeySet : baseKeySet))
+                ?? (try? url.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey, .fileSizeKey, .contentModificationDateKey]))
+
             // 2. Minimum size filter
-            let logicalSize = Int64(rv.fileSize ?? rv.totalFileAllocatedSize ?? 0)
+            let logicalSize = Int64(rv?.fileSize ?? rv?.totalFileAllocatedSize ?? 0)
             if let minBytes = query.minSizeBytes, minBytes > 0 {
-                if rv.isDirectory == true && rv.isPackage != true {
+                if rv?.isDirectory == true && rv?.isPackage != true {
                     continue
                 }
                 if logicalSize < minBytes {
@@ -121,14 +214,15 @@ enum DeepSearchService {
 
             // 3. Modified date filter
             if let cutoff = cutoffDate {
-                guard let mod = rv.contentModificationDate, mod >= cutoff else {
+                guard let mod = rv?.contentModificationDate, mod >= cutoff else {
                     continue
                 }
             }
 
             // 4. Color tag filter
             if let requiredTag = query.colorTag {
-                let tags = FinderColorTag.extractColorTags(from: rv.tagNames ?? [], labelNumber: rv.labelNumber)
+                let tagNames = rv?.tagNames ?? (try? url.resourceValues(forKeys: [.tagNamesKey]))?.tagNames ?? []
+                let tags = FinderColorTag.extractColorTags(from: tagNames, labelNumber: rv?.labelNumber)
                 if !tags.contains(requiredTag) {
                     continue
                 }
@@ -137,7 +231,7 @@ enum DeepSearchService {
             // 5. Optional file-content substring search
             var matchedSnippet: String? = nil
             if !trimmedContent.isEmpty {
-                guard rv.isRegularFile == true,
+                guard rv?.isRegularFile == true,
                       logicalSize > 0,
                       logicalSize <= maxContentInspectBytes,
                       !CloudStorageService.isDatalessPlaceholder(url) else {

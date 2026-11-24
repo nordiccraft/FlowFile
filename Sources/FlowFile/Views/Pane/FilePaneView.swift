@@ -316,7 +316,12 @@ struct FilePaneView: View {
                         .font(.system(size: 11.5, weight: .semibold))
                         .foregroundStyle(Color.accentColor)
 
-                    TextField("Lyn-filter i «\(activeTab.title)» (fuzzy søk)...", text: Binding(
+                    TextField(
+                        workspace.tr(
+                            "Lyn-filter i «\(activeTab.title)» (f.eks. faktura eller *.apk)...",
+                            "Instant filter in “\(activeTab.title)” (e.g. invoice or *.apk)..."
+                        ),
+                        text: Binding(
                         get: { activeTab.filterQuery },
                         set: { newVal in
                             activeTab.filterQuery = newVal

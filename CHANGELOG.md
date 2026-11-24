@@ -2,6 +2,12 @@
 
 Alle viktige nyheter, forbedringer og feilrettinger i FlowFile dokumenteres her og vises direkte i oppdateringsvinduet i appen.
 
+## [1.2.1] - 2026-11-24
+
+- **Fikset søk og jokertegn (`*.apk`, `*`, `?`):** Både lynfilteret (`⌘F`) og dypsøket (`⇧⌘F`) støtter nå jokertegn som `*.apk`, `rapport*.pdf`, `?.txt` og flere mønstre skilt med semikolon (`*.apk; *.dmg`), samt riktig håndtering av norske `æ/ø/å`-tegn.
+- **Raskere og mer pålitelig dypsøk:** Følger nå snarveimapper (f.eks. `~/OneDrive`), hopper over `~/Library`-cacher når du søker fra hjemmemappen, mister aldri treff hvis en fil mangler metadata/tagger, og lar deg bytte mellom *Gjeldende mappe* og *Hele hjemmemappen* direkte i søkevinduet.
+- **Tydelig tilgangsvarsel i søk:** Viser tydelig beskjed med snarvei til Systeminnstillinger dersom macOS blokkerer lesetilgang til mappen du søker i, i stedet for å vise «Ingen treff».
+
 ## [1.2.0] - 2026-11-21
 
 - **Ny og robust QR- og Wi-Fi-deling:** Kjører nå videre i bakgrunnen med statusindikator og stoppknapp i bunnlinjen, har automatisk selvtest med snarvei til *Lokalt nettverk*-innstillingene, nettverksvelger når Macen har flere grensesnitt, valgfri 4-sifret PIN-kode, nedtelling med «+10 min»-forlengelse, støtte for gjenopptakelse (`HTTP Range`/`HEAD`), nedlastingslogg og veiledning ved bedrifts-/gjestenett.

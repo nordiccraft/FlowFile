@@ -35,14 +35,18 @@ struct DeepSearchSheetView: View {
     @State private var dateFilterChoice: Int = 0
     @State private var selectedTag: FinderColorTag? = nil
     @State private var caseSensitiveContent: Bool = false
+    @State private var searchEntireHome: Bool = false
 
     @State private var matches: [DeepSearchMatch] = []
     @State private var isSearching: Bool = false
     @State private var hasSearchedOnce: Bool = false
+    @State private var accessWarning: String? = nil
     @State private var searchTask: Task<Void, Never>? = nil
 
     private var rootURL: URL {
-        workspace.activeTab.currentURL
+        searchEntireHome
+            ? FileManager.default.homeDirectoryForCurrentUser
+            : workspace.activeTab.currentURL
     }
 
     private var resolvedMinBytes: Int64? {
@@ -76,12 +80,15 @@ struct DeepSearchSheetView: View {
 
                 Spacer()
 
-                Text(rootURL.path)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.head)
-                    .frame(maxWidth: 280, alignment: .trailing)
+                Picker("", selection: $searchEntireHome) {
+                    Text(workspace.tr("Gjeldende mappe", "Current Folder")).tag(false)
+                    Text(workspace.tr("Hele hjemmemappen", "Entire Home")).tag(true)
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 260)
+                .onChange(of: searchEntireHome) { _, _ in
+                    if hasSearchedOnce { triggerSearch() }
+                }
 
                 Button(workspace.tr("Lukk", "Close")) {
                     searchTask?.cancel()
@@ -90,13 +97,24 @@ struct DeepSearchSheetView: View {
                 .buttonStyle(.glass)
             }
 
+            HStack(spacing: 6) {
+                Image(systemName: "folder")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                Text(rootURL.path)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.head)
+            }
+
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 10) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(workspace.tr("Fil- eller mappenavn", "File or folder name"))
+                        Text(workspace.tr("Fil- eller mappenavn (støtter * og ?)", "File or folder name (supports * and ?)"))
                             .font(.system(size: 11.5, weight: .semibold))
                             .foregroundStyle(.secondary)
-                        TextField(workspace.tr("F.eks. faktura, rapport, .swift ...", "E.g. invoice, report, .swift ..."), text: $nameQuery)
+                        TextField(workspace.tr("F.eks. faktura, *.apk, rapport*.pdf ...", "E.g. invoice, *.apk, report*.pdf ..."), text: $nameQuery)
                             .textFieldStyle(.roundedBorder)
                             .onSubmit { triggerSearch() }
                     }
@@ -185,7 +203,22 @@ struct DeepSearchSheetView: View {
 
             Divider()
 
-            if isSearching {
+            if let accessWarning {
+                VStack(spacing: 10) {
+                    Image(systemName: "lock.trianglebadge.exclamationmark.fill")
+                        .font(.system(size: 28))
+                        .foregroundStyle(.orange)
+                    Text(accessWarning)
+                        .font(.system(size: 12.5, weight: .medium))
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 480)
+                    Button(workspace.tr("Åpne Full disktilgang-innstillinger", "Open Full Disk Access Settings")) {
+                        PermissionsService.openFullDiskAccessSettings()
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if isSearching {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
                     Text(workspace.tr("Søker gjennom undermapper...", "Searching subfolders..."))
@@ -283,10 +316,22 @@ struct DeepSearchSheetView: View {
 
     private func triggerSearch() {
         searchTask?.cancel()
+        accessWarning = nil
+        let targetRoot = rootURL.standardizedFileURL.resolvingSymlinksInPath()
+        if (try? FileManager.default.contentsOfDirectory(atPath: targetRoot.path)) == nil {
+            matches = []
+            isSearching = false
+            hasSearchedOnce = true
+            accessWarning = workspace.tr(
+                "FlowFile mangler lesetilgang til «\(targetRoot.lastPathComponent)». Gi tilgang under Systeminnstillinger → Personvern og sikkerhet → Filer og mapper (eller Full disktilgang).",
+                "FlowFile does not have read access to “\(targetRoot.lastPathComponent)”. Grant access in System Settings → Privacy & Security → Files and Folders (or Full Disk Access)."
+            )
+            return
+        }
         isSearching = true
         hasSearchedOnce = true
         let q = DeepSearchQuery(
-            rootURL: rootURL,
+            rootURL: targetRoot,
             nameQuery: nameQuery,
             contentQuery: contentQuery,
             minSizeBytes: resolvedMinBytes,
