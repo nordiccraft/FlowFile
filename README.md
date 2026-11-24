@@ -1,8 +1,12 @@
+<p align="center">
+  <img src="assets/flowfile-logo.png" alt="FlowFile Logo" width="220" />
+</p>
+
 # FlowFile for macOS
 
 [![Build & Verify](https://github.com/nordiccraft/FlowFile/actions/workflows/release.yml/badge.svg)](https://github.com/nordiccraft/FlowFile/actions/workflows/release.yml)
 
-**FlowFile** er en rask, native filutforsker for macOS 26 – bygget i ren Swift (`SwiftUI` + `AppKit`) med enkeltpanel, topanelsvisning, faner, innebygde filverktøy og macOS **Liquid Glass**.
+**FlowFile** fra [NordicCraft](https://nordiccraft.io) er en rask, native filutforsker for macOS 26 – bygget i ren Swift (`SwiftUI` + `AppKit`) med enkeltpanel, topanelsvisning, faner, innebygde filverktøy og macOS **Liquid Glass**.
 
 ---
 

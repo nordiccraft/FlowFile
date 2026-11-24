@@ -1,89 +1,180 @@
 import AppKit
+import CoreGraphics
 import Foundation
+import ImageIO
+import UniformTypeIdentifiers
 
 guard CommandLine.arguments.count > 1 else { exit(0) }
 let outputICNSPath = CommandLine.arguments[1]
-let tempIconset = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("FlowFile.iconset")
-try? FileManager.default.removeItem(at: tempIconset)
-try FileManager.default.createDirectory(at: tempIconset, withIntermediateDirectories: true)
+let scriptDir = URL(fileURLWithPath: CommandLine.arguments[0]).standardizedFileURL.deletingLastPathComponent()
+let projectDir = scriptDir.deletingLastPathComponent()
+let markURL = projectDir.appendingPathComponent("assets/flowfile-icon-mark.png")
+let previewOutPath: String? = CommandLine.arguments.count > 2 ? CommandLine.arguments[2] : nil
 
-func drawIcon(pixelSize: Int) -> Data? {
-    guard let rep = NSBitmapImageRep(
-        bitmapDataPlanes: nil,
-        pixelsWide: pixelSize,
-        pixelsHigh: pixelSize,
-        bitsPerSample: 8,
-        samplesPerPixel: 4,
-        hasAlpha: true,
-        isPlanar: false,
-        colorSpaceName: .calibratedRGB,
+let markCGImage: CGImage? = {
+    guard let src = CGImageSourceCreateWithURL(markURL as CFURL, nil) else { return nil }
+    return CGImageSourceCreateImageAtIndex(src, 0, nil)
+}()
+
+func renderIcon(pixelSize: Int) -> CGImage? {
+    let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
+    guard let ctx = CGContext(
+        data: nil,
+        width: pixelSize,
+        height: pixelSize,
+        bitsPerComponent: 8,
         bytesPerRow: 0,
-        bitsPerPixel: 0
+        space: colorSpace,
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
     ) else { return nil }
 
-    NSGraphicsContext.saveGraphicsState()
-    NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+    ctx.interpolationQuality = .high
+    ctx.setAllowsAntialiasing(true)
+    ctx.setShouldAntialias(true)
 
     let s = CGFloat(pixelSize)
-    let pad = s * 0.08
-    let rect = NSRect(x: pad, y: pad, width: s - pad * 2, height: s - pad * 2)
-    let bgPath = NSBezierPath(roundedRect: rect, xRadius: s * 0.22, yRadius: s * 0.22)
+    // Standard macOS Big Sur / Sonoma / Tahoe icon canvas padding (~9.7% inset inside 1024px grid)
+    let pad = s * 0.095
+    let cardRect = CGRect(x: pad, y: pad, width: s - pad * 2, height: s - pad * 2)
+    let cornerRadius = cardRect.width * 0.225
+    let squirclePath = CGPath(roundedRect: cardRect, cornerWidth: cornerRadius, cornerHeight: cornerRadius, transform: nil)
 
-    let grad = NSGradient(colors: [
-        NSColor(calibratedRed: 0.08, green: 0.38, blue: 0.92, alpha: 1.0),
-        NSColor(calibratedRed: 0.14, green: 0.72, blue: 0.96, alpha: 1.0)
-    ])
-    grad?.draw(in: bgPath, angle: -55)
-
-    // Dual-pane glass cards motif
-    let inset = s * 0.21
-    let gap = s * 0.035
-    let cardW = (s - inset * 2 - gap) / 2
-    let cardH = s * 0.52
-    let cardY = (s - cardH) / 2
-
-    let leftCard = NSBezierPath(
-        roundedRect: NSRect(x: inset, y: cardY, width: cardW, height: cardH),
-        xRadius: s * 0.06,
-        yRadius: s * 0.06
+    // Subtle outer drop shadow for macOS Dock depth
+    ctx.saveGState()
+    ctx.setShadow(
+        offset: CGSize(width: 0, height: -s * 0.015),
+        blur: s * 0.032,
+        color: CGColor(red: 0.01, green: 0.03, blue: 0.10, alpha: 0.42)
     )
-    NSColor.white.withAlphaComponent(0.92).setFill()
-    leftCard.fill()
+    ctx.addPath(squirclePath)
+    ctx.setFillColor(CGColor(red: 0.04, green: 0.10, blue: 0.22, alpha: 1.0))
+    ctx.fillPath()
+    ctx.restoreGState()
 
-    let rightCard = NSBezierPath(
-        roundedRect: NSRect(x: inset + cardW + gap, y: cardY, width: cardW, height: cardH),
-        xRadius: s * 0.06,
-        yRadius: s * 0.06
-    )
-    NSColor.white.withAlphaComponent(0.62).setFill()
-    rightCard.fill()
+    // Clip to deep marine-blue squircle
+    ctx.saveGState()
+    ctx.addPath(squirclePath)
+    ctx.clip()
 
-    NSGraphicsContext.restoreGraphicsState()
-    return rep.representation(using: .png, properties: [:])
+    // Deep marine-blue gradient matching the FlowFile wordmark (#07142B -> #0D2247 -> #122E5E)
+    let bgColors = [
+        CGColor(red: 0.027, green: 0.078, blue: 0.169, alpha: 1.0),
+        CGColor(red: 0.055, green: 0.137, blue: 0.282, alpha: 1.0),
+        CGColor(red: 0.078, green: 0.192, blue: 0.376, alpha: 1.0)
+    ] as CFArray
+    if let grad = CGGradient(colorsSpace: colorSpace, colors: bgColors, locations: [0.0, 0.55, 1.0]) {
+        ctx.drawLinearGradient(
+            grad,
+            start: CGPoint(x: cardRect.minX, y: cardRect.minY),
+            end: CGPoint(x: cardRect.maxX, y: cardRect.maxY),
+            options: []
+        )
+    }
+
+    // Soft ambient radial glow behind the F-document ribbon so purple/blue/cyan pops cleanly
+    let glowColors = [
+        CGColor(red: 0.20, green: 0.52, blue: 0.96, alpha: 0.24),
+        CGColor(red: 0.18, green: 0.40, blue: 0.88, alpha: 0.0)
+    ] as CFArray
+    if let radial = CGGradient(colorsSpace: colorSpace, colors: glowColors, locations: [0.0, 1.0]) {
+        let center = CGPoint(x: cardRect.midX, y: cardRect.midY)
+        ctx.drawRadialGradient(
+            radial,
+            startCenter: center,
+            startRadius: 0,
+            endCenter: center,
+            endRadius: cardRect.width * 0.52,
+            options: []
+        )
+    }
+
+    // Draw the official FlowFile F-document mark centered with balanced breathing room
+    if let mark = markCGImage {
+        let markW = CGFloat(mark.width)
+        let markH = CGFloat(mark.height)
+        let maxDrawSide = cardRect.width * 0.72
+        let scale = min(maxDrawSide / markW, maxDrawSide / markH)
+        let drawW = markW * scale
+        let drawH = markH * scale
+        // Slight optical centering (+1.2% left/right balanced for folded corner + ribbon curve)
+        let drawRect = CGRect(
+            x: cardRect.midX - drawW * 0.50,
+            y: cardRect.midY - drawH * 0.50,
+            width: drawW,
+            height: drawH
+        )
+        ctx.saveGState()
+        ctx.setShadow(
+            offset: CGSize(width: 0, height: -s * 0.012),
+            blur: s * 0.030,
+            color: CGColor(red: 0.01, green: 0.03, blue: 0.10, alpha: 0.55)
+        )
+        ctx.draw(mark, in: drawRect)
+        ctx.restoreGState()
+    }
+
+    // Crisp glass inner rim highlight around squircle
+    let borderRect = cardRect.insetBy(dx: max(0.5, s * 0.004), dy: max(0.5, s * 0.004))
+    let borderPath = CGPath(roundedRect: borderRect, cornerWidth: cornerRadius, cornerHeight: cornerRadius, transform: nil)
+    ctx.addPath(borderPath)
+    ctx.setStrokeColor(CGColor(red: 0.55, green: 0.80, blue: 1.0, alpha: 0.24))
+    ctx.setLineWidth(max(1.0, s * 0.008))
+    ctx.strokePath()
+
+    ctx.restoreGState()
+    return ctx.makeImage()
 }
 
-let sizes: [(String, Int)] = [
-    ("icon_16x16.png", 16),
-    ("icon_16x16@2x.png", 32),
-    ("icon_32x32.png", 32),
-    ("icon_32x32@2x.png", 64),
-    ("icon_128x128.png", 128),
-    ("icon_128x128@2x.png", 256),
-    ("icon_256x256.png", 256),
-    ("icon_256x256@2x.png", 512),
-    ("icon_512x512.png", 512),
-    ("icon_512x512@2x.png", 1024)
+func pngData(for image: CGImage) throws -> Data {
+    let data = NSMutableData()
+    guard let dest = CGImageDestinationCreateWithData(data as CFMutableData, UTType.png.identifier as CFString, 1, nil) else {
+        throw NSError(domain: "GenerateIcon", code: 1)
+    }
+    CGImageDestinationAddImage(dest, image, nil)
+    guard CGImageDestinationFinalize(dest) else {
+        throw NSError(domain: "GenerateIcon", code: 2)
+    }
+    return data as Data
+}
+
+/// Writes a 100% Apple-compliant `.icns` container directly in pure Swift (no `iconutil` dependency).
+func buildICNS(entries: [(ostype: String, pixelSize: Int)]) throws -> Data {
+    var body = Data()
+    for entry in entries {
+        guard let img = renderIcon(pixelSize: entry.pixelSize) else { continue }
+        let png = try pngData(for: img)
+        let tag = Data(entry.ostype.utf8)
+        guard tag.count == 4 else { continue }
+        var chunkLen = UInt32(8 + png.count).bigEndian
+        body.append(tag)
+        body.append(Data(bytes: &chunkLen, count: 4))
+        body.append(png)
+    }
+
+    var file = Data("icns".utf8)
+    var totalLen = UInt32(8 + body.count).bigEndian
+    file.append(Data(bytes: &totalLen, count: 4))
+    file.append(body)
+    return file
+}
+
+let icnsEntries: [(String, Int)] = [
+    ("icp4", 16),   // 16x16
+    ("ic11", 32),   // 16x16@2x
+    ("icp5", 32),   // 32x32
+    ("ic12", 64),   // 32x32@2x
+    ("ic07", 128),  // 128x128
+    ("ic13", 256),  // 128x128@2x
+    ("ic08", 256),  // 256x256
+    ("ic14", 512),  // 256x256@2x
+    ("ic09", 512),  // 512x512
+    ("ic10", 1024)  // 512x512@2x
 ]
 
-for (filename, px) in sizes {
-    if let data = drawIcon(pixelSize: px) {
-        try data.write(to: tempIconset.appendingPathComponent(filename))
-    }
-}
+let icnsData = try buildICNS(entries: icnsEntries)
+try icnsData.write(to: URL(fileURLWithPath: outputICNSPath), options: .atomic)
 
-let proc = Process()
-proc.executableURL = URL(fileURLWithPath: "/usr/bin/iconutil")
-proc.arguments = ["-c", "icns", tempIconset.path, "-o", outputICNSPath]
-try proc.run()
-proc.waitUntilExit()
-try? FileManager.default.removeItem(at: tempIconset)
+if let previewOutPath, let previewImg = renderIcon(pixelSize: 512) {
+    let previewPNG = try pngData(for: previewImg)
+    try previewPNG.write(to: URL(fileURLWithPath: previewOutPath), options: .atomic)
+}

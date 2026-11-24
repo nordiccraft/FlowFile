@@ -2,6 +2,12 @@
 
 Alle viktige nyheter, forbedringer og feilrettinger i FlowFile dokumenteres her og vises direkte i oppdateringsvinduet i appen.
 
+## [1.2.2] - 2026-11-24
+
+- **Ny offisiell FlowFile-logo og macOS app-ikon:** Dyp marineblå macOS-ikonrute med den nye FlowFile-logoen i Dock, Finder, Spotlight, `.dmg`-installeren, *Om FlowFile*, Velkomstguiden og oppdateringsvinduet.
+- **Ny ren Swift `.icns`-generator:** Bygger skarpe 16–1024 px app-ikoner direkte uten avhengighet til `iconutil`.
+- **NordicCraft-merking:** Oppdatert opphavsrettsinfo (*Om FlowFile*) og `README.md` med [nordiccraft.io](https://nordiccraft.io).
+
 ## [1.2.1] - 2026-11-24
 
 - **Fikset søk og jokertegn (`*.apk`, `*`, `?`):** Både lynfilteret (`⌘F`) og dypsøket (`⇧⌘F`) støtter nå jokertegn som `*.apk`, `rapport*.pdf`, `?.txt` og flere mønstre skilt med semikolon (`*.apk; *.dmg`), samt riktig håndtering av norske `æ/ø/å`-tegn.

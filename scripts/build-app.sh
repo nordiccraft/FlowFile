@@ -35,7 +35,13 @@ cp "$BIN_PATH" "$MACOS_DIR/$APP_NAME"
 chmod 755 "$MACOS_DIR/$APP_NAME"
 
 if [[ -f "$PROJECT_DIR/scripts/generate-icon.swift" ]]; then
-    swift -module-cache-path /tmp/swift-module-cache "$PROJECT_DIR/scripts/generate-icon.swift" "$RESOURCES_DIR/AppIcon.icns" || true
+    swift -module-cache-path /tmp/swift-module-cache "$PROJECT_DIR/scripts/generate-icon.swift" "$RESOURCES_DIR/AppIcon.icns" "$RESOURCES_DIR/flowfile-appicon.png"
+fi
+if [[ -f "$PROJECT_DIR/assets/flowfile-logo.png" ]]; then
+    cp "$PROJECT_DIR/assets/flowfile-logo.png" "$RESOURCES_DIR/flowfile-logo.png"
+fi
+if [[ ! -f "$RESOURCES_DIR/flowfile-appicon.png" && -f "$PROJECT_DIR/assets/flowfile-appicon.png" ]]; then
+    cp "$PROJECT_DIR/assets/flowfile-appicon.png" "$RESOURCES_DIR/flowfile-appicon.png"
 fi
 
 cat > "$CONTENTS_DIR/Info.plist" <<EOF
@@ -69,6 +75,8 @@ cat > "$CONTENTS_DIR/Info.plist" <<EOF
     <string>${APP_VERSION}</string>
     <key>CFBundleVersion</key>
     <string>${BUILD_NUMBER}</string>
+    <key>NSHumanReadableCopyright</key>
+    <string>© 2026 NordicCraft (nordiccraft.io)</string>
     <key>FFUpdateRepository</key>
     <string>${FLOWFILE_REPO}</string>
     <key>LSApplicationCategoryType</key>

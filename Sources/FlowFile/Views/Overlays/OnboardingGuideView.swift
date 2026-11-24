@@ -1,6 +1,32 @@
 import AppKit
 import SwiftUI
 
+/// Renders the crisp FlowFile app icon from the bundle (`flowfile-appicon.png`), falling back to `NSApp.applicationIconImage`.
+struct FlowFileBrandIconView: View {
+    var size: CGFloat = 44
+
+    private static let cachedImage: NSImage? = {
+        if let url = Bundle.main.url(forResource: "flowfile-appicon", withExtension: "png"),
+           let img = NSImage(contentsOf: url) {
+            return img
+        }
+        return NSApp.applicationIconImage
+    }()
+
+    var body: some View {
+        if let img = Self.cachedImage {
+            Image(nsImage: img)
+                .resizable()
+                .interpolation(.high)
+                .aspectRatio(contentMode: .fit)
+                .frame(width: size, height: size)
+        } else {
+            LucideIcon(kind: .sparkles, size: size * 0.65, lineWidth: 1.9)
+                .foregroundStyle(Color.accentColor)
+        }
+    }
+}
+
 struct InteractiveTourOverlay: View {
     @Bindable var workspace: WorkspaceState
     let anchors: [TourTargetID: Anchor<CGRect>]
@@ -81,8 +107,7 @@ struct InteractiveTourOverlay: View {
             }
 
             HStack(spacing: 12) {
-                LucideIcon(kind: .sparkles, size: 28, lineWidth: 1.9)
-                    .foregroundStyle(Color.accentColor)
+                FlowFileBrandIconView(size: 46)
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(workspace.tr("Velkommen til FlowFile", "Welcome to FlowFile"))

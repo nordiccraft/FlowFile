@@ -12,9 +12,8 @@ struct UpdateSheetView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             // Header
-            HStack(spacing: 10) {
-                LucideIcon(kind: .refreshCw, size: 22, lineWidth: 1.9)
-                    .foregroundStyle(Color.accentColor)
+            HStack(spacing: 12) {
+                FlowFileBrandIconView(size: 38)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(workspace.tr("Programvareoppdatering", "Software Update"))
