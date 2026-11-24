@@ -2,6 +2,11 @@
 
 Alle viktige nyheter, forbedringer og feilrettinger i FlowFile dokumenteres her og vises direkte i oppdateringsvinduet i appen.
 
+## [1.2.3] - 2026-11-24
+
+- **Søk på hele Macen via macOS Spotlight:** Nytt valg *Hele Macen (Spotlight)* i Dypsøk (`⇧⌘F`) som finner f.eks. alle `*.apk`-filer på hele maskinen på under ett sekund – velges automatisk når du står på `Macintosh HD`.
+- **Sømløs overgang fra `⌘F` til søk på hele Macen:** Når lynfilteret (`⌘F`) ikke finner treff i gjeldende mappe, kan du trykke **Enter** eller klikke **«Søk på hele Macen (Spotlight)»** rett fra filterlinjen eller tom-tilstanden for å søke umiddelbart.
+
 ## [1.2.2] - 2026-11-24
 
 - **Ny offisiell FlowFile-logo og macOS app-ikon:** Dyp marineblå macOS-ikonrute med den nye FlowFile-logoen i Dock, Finder, Spotlight, `.dmg`-installeren, *Om FlowFile*, Velkomstguiden og oppdateringsvinduet.

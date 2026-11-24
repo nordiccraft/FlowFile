@@ -180,6 +180,8 @@ final class WorkspaceState {
         didSet { TabSessionPersistence.saveWorkspaces(savedWorkspaces) }
     }
     var isDeepSearchVisible: Bool = false
+    var deepSearchInitialQuery: String = ""
+    var deepSearchInitialScope: DeepSearchScope? = nil
     var isTaggedFilesSheetVisible: Bool = false
     var selectedSidebarColorTag: FinderColorTag = .red
     var isSaveWorkspaceSheetVisible: Bool = false
@@ -1558,7 +1560,9 @@ final class WorkspaceState {
         isTaggedFilesSheetVisible = true
     }
 
-    func openDeepSearch() {
+    func openDeepSearch(initialQuery: String = "", scope: DeepSearchScope? = nil) {
+        deepSearchInitialQuery = initialQuery
+        deepSearchInitialScope = scope
         isDeepSearchVisible = true
     }
 

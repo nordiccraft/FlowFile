@@ -708,6 +708,12 @@ enum FlowFileVerificationSuite {
             try expect(filterTab.displayedItems.count == 1 && filterTab.displayedItems[0].name == "MyApp-release.apk")
             try FileManager.default.removeItem(at: apkFile)
 
+            // Spotlight query builder for Entire Mac search
+            let spotAPK = DeepSearchService.buildSpotlightQuery(for: DeepSearchQuery(rootURL: URL(fileURLWithPath: "/"), scope: .entireMacSpotlight, nameQuery: "*.apk"))
+            try expect(spotAPK == "kMDItemFSName == '*.apk'cd")
+            let spotMulti = DeepSearchService.buildSpotlightQuery(for: DeepSearchQuery(rootURL: URL(fileURLWithPath: "/"), scope: .entireMacSpotlight, nameQuery: "*.apk; faktura", minSizeBytes: 1_000_000))
+            try expect(spotMulti == "(kMDItemFSName == '*.apk'cd || kMDItemFSName == '*faktura*'cd) && kMDItemFSSize >= 1000000")
+
             // 2. FlatBranchService & TabState flat toggle
             let flatItems = try FlatBranchService.listRecursiveFiles(at: tempDir, showHidden: false)
             try expect(flatItems.count == 4, "All 4 nested files should be flattened without directory rows")

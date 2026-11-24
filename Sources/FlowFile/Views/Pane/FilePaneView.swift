@@ -333,6 +333,13 @@ struct FilePaneView: View {
                     .textFieldStyle(.plain)
                     .font(.system(size: 12.5))
                     .focused($isFilterFieldFocused)
+                    .onSubmit {
+                        let q = activeTab.filterQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !q.isEmpty && activeTab.displayedItems.isEmpty {
+                            let scope: DeepSearchScope = activeTab.currentURL.path == "/" ? .entireMacSpotlight : .currentFolder
+                            workspace.openDeepSearch(initialQuery: q, scope: scope)
+                        }
+                    }
                     .onExitCommand {
                         activeTab.filterQuery = ""
                         activeTab.isFilterBarVisible = false
@@ -341,6 +348,21 @@ struct FilePaneView: View {
                     Text("\(activeTab.displayedItems.count) av \(activeTab.allItems.count)")
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(.secondary)
+
+                    if !activeTab.filterQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Button {
+                            let q = activeTab.filterQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+                            workspace.openDeepSearch(initialQuery: q, scope: .entireMacSpotlight)
+                        } label: {
+                            Label(
+                                workspace.tr("Søk på hele Macen", "Search Entire Mac"),
+                                systemImage: "magnifyingglass"
+                            )
+                            .font(.system(size: 11, weight: .semibold))
+                        }
+                        .buttonStyle(.glass)
+                        .controlSize(.small)
+                    }
 
                     Button {
                         activeTab.filterQuery = ""
@@ -371,6 +393,53 @@ struct FilePaneView: View {
                         activeTab.goUp(showHidden: workspace.showHiddenFiles)
                     }
                     .buttonStyle(.glass)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding()
+                .background(Color(nsColor: .controlBackgroundColor))
+            } else if activeTab.displayedItems.isEmpty && !activeTab.filterQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                let q = activeTab.filterQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+                VStack(spacing: 12) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 30))
+                        .foregroundStyle(.secondary)
+                    Text(workspace.tr(
+                        "Ingen filer som matcher «\(q)» direkte i «\(activeTab.title)».",
+                        "No files matching “\(q)” directly in “\(activeTab.title)”."
+                    ))
+                    .font(.system(size: 13, weight: .semibold))
+                    Text(workspace.tr(
+                        "Lyn-filteret (⌘F) filtrerer kun mappen du står i. Bruk Dypsøk for å søke i undermapper eller på hele Macen:",
+                        "Instant filter (⌘F) only filters the current folder. Use Deep Search to search subfolders or the entire Mac:"
+                    ))
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 420)
+
+                    HStack(spacing: 10) {
+                        Button {
+                            workspace.openDeepSearch(initialQuery: q, scope: .entireMacSpotlight)
+                        } label: {
+                            Label(
+                                workspace.tr("Søk etter «\(q)» på hele Macen (Spotlight)", "Search Entire Mac for “\(q)” (Spotlight)"),
+                                systemImage: "macbook"
+                            )
+                        }
+                        .buttonStyle(.borderedProminent)
+
+                        if activeTab.currentURL.path != "/" {
+                            Button {
+                                workspace.openDeepSearch(initialQuery: q, scope: .currentFolder)
+                            } label: {
+                                Label(
+                                    workspace.tr("Søk i undermapper i «\(activeTab.title)»", "Search Subfolders of “\(activeTab.title)”"),
+                                    systemImage: "folder.badge.questionmark"
+                                )
+                            }
+                            .buttonStyle(.glass)
+                        }
+                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding()

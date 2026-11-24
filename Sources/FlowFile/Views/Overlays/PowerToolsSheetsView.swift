@@ -35,7 +35,7 @@ struct DeepSearchSheetView: View {
     @State private var dateFilterChoice: Int = 0
     @State private var selectedTag: FinderColorTag? = nil
     @State private var caseSensitiveContent: Bool = false
-    @State private var searchEntireHome: Bool = false
+    @State private var scope: DeepSearchScope = .currentFolder
 
     @State private var matches: [DeepSearchMatch] = []
     @State private var isSearching: Bool = false
@@ -44,9 +44,14 @@ struct DeepSearchSheetView: View {
     @State private var searchTask: Task<Void, Never>? = nil
 
     private var rootURL: URL {
-        searchEntireHome
-            ? FileManager.default.homeDirectoryForCurrentUser
-            : workspace.activeTab.currentURL
+        switch scope {
+        case .currentFolder:
+            return workspace.activeTab.currentURL
+        case .homeFolder:
+            return FileManager.default.homeDirectoryForCurrentUser
+        case .entireMacSpotlight:
+            return URL(fileURLWithPath: "/")
+        }
     }
 
     private var resolvedMinBytes: Int64? {
@@ -80,14 +85,17 @@ struct DeepSearchSheetView: View {
 
                 Spacer()
 
-                Picker("", selection: $searchEntireHome) {
-                    Text(workspace.tr("Gjeldende mappe", "Current Folder")).tag(false)
-                    Text(workspace.tr("Hele hjemmemappen", "Entire Home")).tag(true)
+                Picker("", selection: $scope) {
+                    Text(workspace.tr("Gjeldende mappe", "Current Folder")).tag(DeepSearchScope.currentFolder)
+                    Text(workspace.tr("Hjemmemappe", "Home")).tag(DeepSearchScope.homeFolder)
+                    Text(workspace.tr("Hele Macen (Spotlight)", "Entire Mac (Spotlight)")).tag(DeepSearchScope.entireMacSpotlight)
                 }
                 .pickerStyle(.segmented)
-                .frame(width: 260)
-                .onChange(of: searchEntireHome) { _, _ in
-                    if hasSearchedOnce { triggerSearch() }
+                .frame(width: 390)
+                .onChange(of: scope) { _, _ in
+                    if hasSearchedOnce || !nameQuery.isEmpty || !contentQuery.isEmpty {
+                        triggerSearch()
+                    }
                 }
 
                 Button(workspace.tr("Lukk", "Close")) {
@@ -98,11 +106,13 @@ struct DeepSearchSheetView: View {
             }
 
             HStack(spacing: 6) {
-                Image(systemName: "folder")
+                Image(systemName: scope == .entireMacSpotlight ? "macbook" : "folder")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
-                Text(rootURL.path)
-                    .font(.system(size: 11, design: .monospaced))
+                Text(scope == .entireMacSpotlight
+                     ? workspace.tr("Søker i hele Macens Spotlight-indeks (raskest for hele maskinen)", "Searching the entire Mac via Spotlight index (fastest system-wide)")
+                     : rootURL.path)
+                    .font(.system(size: 11, design: scope == .entireMacSpotlight ? .default : .monospaced))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.head)
@@ -308,7 +318,25 @@ struct DeepSearchSheetView: View {
             }
         }
         .padding(20)
-        .frame(width: 760, height: 540)
+        .frame(width: 800, height: 560)
+        .onAppear {
+            if let requestedScope = workspace.deepSearchInitialScope {
+                scope = requestedScope
+            } else if workspace.activeTab.currentURL.path == "/" {
+                // On Macintosh HD (/), Spotlight is instant and searches the entire Mac
+                scope = .entireMacSpotlight
+            } else {
+                scope = .currentFolder
+            }
+
+            let initial = workspace.deepSearchInitialQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+            workspace.deepSearchInitialQuery = ""
+            workspace.deepSearchInitialScope = nil
+            if !initial.isEmpty {
+                nameQuery = initial
+                triggerSearch()
+            }
+        }
         .onDisappear {
             searchTask?.cancel()
         }
@@ -318,7 +346,8 @@ struct DeepSearchSheetView: View {
         searchTask?.cancel()
         accessWarning = nil
         let targetRoot = rootURL.standardizedFileURL.resolvingSymlinksInPath()
-        if (try? FileManager.default.contentsOfDirectory(atPath: targetRoot.path)) == nil {
+        if scope != .entireMacSpotlight,
+           (try? FileManager.default.contentsOfDirectory(atPath: targetRoot.path)) == nil {
             matches = []
             isSearching = false
             hasSearchedOnce = true
@@ -332,6 +361,7 @@ struct DeepSearchSheetView: View {
         hasSearchedOnce = true
         let q = DeepSearchQuery(
             rootURL: targetRoot,
+            scope: scope,
             nameQuery: nameQuery,
             contentQuery: contentQuery,
             minSizeBytes: resolvedMinBytes,

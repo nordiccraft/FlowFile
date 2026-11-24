@@ -82,8 +82,17 @@ enum FileNameMatcher {
 
 // MARK: - Feature 1: Deep Subfolder & File-Content Search (⇧⌘F)
 
+enum DeepSearchScope: String, CaseIterable, Identifiable {
+    case currentFolder
+    case homeFolder
+    case entireMacSpotlight
+
+    var id: String { rawValue }
+}
+
 struct DeepSearchQuery: Equatable {
     var rootURL: URL
+    var scope: DeepSearchScope = .currentFolder
     var nameQuery: String = ""
     var contentQuery: String = ""
     var minSizeBytes: Int64? = nil
@@ -114,8 +123,120 @@ enum DeepSearchService {
 
     static func search(_ query: DeepSearchQuery) async -> [DeepSearchMatch] {
         await Task.detached(priority: .userInitiated) {
-            searchSync(query)
+            if query.scope == .entireMacSpotlight {
+                return searchViaSpotlightSync(query)
+            }
+            return searchSync(query)
         }.value
+    }
+
+    /// Escapes a literal value for Spotlight (`mdfind`) single-quoted string literals.
+    private static func escapeSpotlightString(_ raw: String) -> String {
+        raw
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "'", with: "\\'")
+    }
+
+    /// Builds a safe macOS Spotlight (`mdfind`) predicate string from a `DeepSearchQuery`.
+    static func buildSpotlightQuery(for query: DeepSearchQuery) -> String? {
+        var clauses: [String] = []
+        let trimmedName = query.nameQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedContent = query.contentQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if !trimmedName.isEmpty {
+            let parts = trimmedName
+                .split(whereSeparator: { $0 == ";" || $0 == "," })
+                .map { String($0).trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+            let nameClauses: [String] = parts.map { part in
+                let pattern = (part.contains("*") || part.contains("?")) ? part : "*\(part)*"
+                return "kMDItemFSName == '\(escapeSpotlightString(pattern))'cd"
+            }
+            if nameClauses.count == 1 {
+                clauses.append(nameClauses[0])
+            } else if nameClauses.count > 1 {
+                clauses.append("(\(nameClauses.joined(separator: " || ")))")
+            }
+        }
+
+        if !trimmedContent.isEmpty {
+            let flags = query.caseSensitiveContent ? "" : "cd"
+            clauses.append("kMDItemTextContent == '*\(escapeSpotlightString(trimmedContent))*'\(flags)")
+        }
+
+        if let minBytes = query.minSizeBytes, minBytes > 0 {
+            clauses.append("kMDItemFSSize >= \(minBytes)")
+        }
+
+        if let days = query.modifiedWithinDays, days > 0 {
+            clauses.append("kMDItemContentModificationDate >= $time.today(-\(days))")
+        }
+
+        if let tag = query.colorTag {
+            clauses.append("kMDItemUserTags == '\(escapeSpotlightString(tag.systemFinderTagName))'cd")
+        }
+
+        guard !clauses.isEmpty else { return nil }
+        return clauses.joined(separator: " && ")
+    }
+
+    /// Uses macOS Spotlight index (`/usr/bin/mdfind`) to search the entire Mac in milliseconds.
+    static func searchViaSpotlightSync(_ query: DeepSearchQuery) -> [DeepSearchMatch] {
+        guard let predicate = buildSpotlightQuery(for: query) else { return [] }
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/mdfind")
+        proc.arguments = [predicate]
+        proc.standardInput = FileHandle.nullDevice
+
+        let outPipe = Pipe()
+        proc.standardOutput = outPipe
+        proc.standardError = FileHandle.nullDevice
+
+        do {
+            try proc.run()
+        } catch {
+            return []
+        }
+
+        let data = outPipe.fileHandleForReading.readDataToEndOfFile()
+        proc.waitUntilExit()
+        guard proc.terminationStatus == 0,
+              let output = String(data: data, encoding: .utf8) else {
+            return []
+        }
+
+        let fm = FileManager.default
+        let keys: Set<URLResourceKey> = [
+            .isDirectoryKey, .isPackageKey, .isRegularFileKey, .isSymbolicLinkKey,
+            .isAliasFileKey, .isHiddenKey, .fileSizeKey, .totalFileAllocatedSizeKey,
+            .contentModificationDateKey, .creationDateKey, .labelNumberKey
+        ]
+        var results: [DeepSearchMatch] = []
+        for rawLine in output.split(whereSeparator: \.isNewline) {
+            if Task.isCancelled || results.count >= query.maxResults { break }
+            let path = String(rawLine)
+            guard !path.isEmpty, fm.fileExists(atPath: path) else { continue }
+            let url = URL(fileURLWithPath: path).standardizedFileURL
+            if !query.includeHidden && url.lastPathComponent.hasPrefix(".") { continue }
+
+            let rv = try? url.resourceValues(forKeys: keys)
+            let insideCloud = CloudStorageService.isInsideAnyCloudFolder(url)
+            let parentPath = url.deletingLastPathComponent().path
+            let item = FileItem(
+                url: url,
+                resourceValues: rv,
+                insideCloudRoot: insideCloud,
+                relativeSubpath: parentPath
+            )
+            results.append(
+                DeepSearchMatch(
+                    item: item,
+                    relativeFolder: parentPath,
+                    matchedLinePreview: nil
+                )
+            )
+        }
+        return results
     }
 
     static func searchSync(_ query: DeepSearchQuery) -> [DeepSearchMatch] {
