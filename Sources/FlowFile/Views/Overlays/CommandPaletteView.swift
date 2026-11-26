@@ -115,8 +115,8 @@ struct CommandPaletteView: View {
 
         list.append(PaletteEntry(
             id: "cmd.sharehub",
-            title: "Smart Delingssenter – Del valgte filer/mapper",
-            subtitle: "E-post/Outlook, passord-ZIP, Teams/Slack, OneDrive/Dropbox & Wi-Fi QR-kode",
+            title: workspace.tr("Smart Delingssenter – Del valgte filer/mapper", "Smart Share Hub – Share Selected Files/Folders"),
+            subtitle: workspace.tr("E-post/Outlook, passord-ZIP, Teams/Slack, OneDrive/Dropbox & Wi-Fi QR-kode", "Mail/Outlook, password ZIP, Teams/Slack, OneDrive/Dropbox & Wi-Fi QR"),
             icon: "square.and.arrow.up.circle.fill",
             shortcut: "⇧⌘S"
         ) {
@@ -126,7 +126,7 @@ struct CommandPaletteView: View {
         for account in workspace.cloudAccounts {
             list.append(PaletteEntry(
                 id: "cloud.\(account.id)",
-                title: "Skylagring: \(account.displayName)",
+                title: "\(workspace.tr("Skylagring", "Cloud Storage")): \(account.displayName)",
                 subtitle: account.rootURL.path,
                 icon: account.provider.systemImage,
                 shortcut: nil
@@ -137,8 +137,8 @@ struct CommandPaletteView: View {
 
         list.append(PaletteEntry(
             id: "cmd.multirename",
-            title: "Multi-Rename Tool – Masse-omdøping",
-            subtitle: "Mønster ([N], [C], [D]), søk/erstatt, regex og forhåndsvisning",
+            title: workspace.tr("Multi-Rename Tool – Masse-omdøping", "Multi-Rename Tool – Batch Rename"),
+            subtitle: workspace.tr("Mønster ([N], [C], [D]), søk/erstatt, regex og forhåndsvisning", "Patterns ([N], [C], [D]), search/replace, regex & live preview"),
             icon: "character.textbox",
             shortcut: "⌘M"
         ) {
@@ -147,8 +147,10 @@ struct CommandPaletteView: View {
 
         list.append(PaletteEntry(
             id: "cmd.dropshelf",
-            title: workspace.isDropShelfVisible ? "Skjul Drop-hylle & Filoverføringskø" : "Åpne Drop-hylle & Filoverføringskø",
-            subtitle: "Samle filer fra ulike mapper og se aktive overføringer",
+            title: workspace.isDropShelfVisible
+                ? workspace.tr("Skjul Drop-hylle & Filoverføringskø", "Hide Drop Shelf & Transfer Queue")
+                : workspace.tr("Åpne Drop-hylle & Filoverføringskø", "Open Drop Shelf & Transfer Queue"),
+            subtitle: workspace.tr("Samle filer fra ulike mapper og se aktive overføringer", "Collect files across folders and inspect active transfers"),
             icon: "tray.2.fill",
             shortcut: "⌘J"
         ) {
@@ -157,8 +159,8 @@ struct CommandPaletteView: View {
 
         list.append(PaletteEntry(
             id: "cmd.compare",
-            title: "Sammenlign venstre og høyre mappe (Dual-Pane Diff)",
-            subtitle: "Marker nye og endrede filer mellom panelene",
+            title: workspace.tr("Sammenlign venstre og høyre mappe (Dual-Pane Diff)", "Compare Left & Right Folders (Dual-Pane Diff)"),
+            subtitle: workspace.tr("Marker nye og endrede filer mellom panelene", "Highlight new and modified files across panes"),
             icon: "arrow.left.and.right.righttriangle.left.righttriangle.right",
             shortcut: "⇧⌘K"
         ) {
@@ -167,8 +169,10 @@ struct CommandPaletteView: View {
 
         list.append(PaletteEntry(
             id: "cmd.embeddedterminal",
-            title: workspace.isTerminalDrawerVisible ? "Skjul innebygd Terminal-skuff" : "Åpne innebygd synkronisert Terminal-skuff",
-            subtitle: "zsh-terminal nederst som følger aktiv mappe",
+            title: workspace.isTerminalDrawerVisible
+                ? workspace.tr("Skjul innebygd Terminal-skuff", "Hide Embedded Terminal Drawer")
+                : workspace.tr("Åpne innebygd synkronisert Terminal-skuff", "Open Embedded Synchronized Terminal Drawer"),
+            subtitle: workspace.tr("zsh-terminal nederst som følger aktiv mappe", "Bottom zsh terminal that follows the active folder"),
             icon: "terminal",
             shortcut: "⌃`"
         ) {
@@ -177,7 +181,7 @@ struct CommandPaletteView: View {
 
         list.append(PaletteEntry(
             id: "cmd.zip",
-            title: "Komprimer valgte filer til .zip-arkiv",
+            title: workspace.tr("Komprimer valgte filer til .zip-arkiv", "Compress Selected Files to .zip Archive"),
             subtitle: workspace.activeTab.currentURL.path,
             icon: "doc.zipper",
             shortcut: nil
@@ -199,8 +203,10 @@ struct CommandPaletteView: View {
 
         list.append(PaletteEntry(
             id: "cmd.hidden",
-            title: workspace.showHiddenFiles ? "Skjul skjulte dot-filer" : "Vis skjulte dot-filer (.dotfiles)",
-            subtitle: "Vis eller skjul filer som starter med punktum",
+            title: workspace.showHiddenFiles
+                ? workspace.tr("Skjul skjulte dot-filer", "Hide Hidden Dotfiles")
+                : workspace.tr("Vis skjulte dot-filer (.dotfiles)", "Show Hidden Dotfiles (.dotfiles)"),
+            subtitle: workspace.tr("Vis eller skjul filer som starter med punktum", "Show or hide files starting with a dot"),
             icon: "eye",
             shortcut: "⇧⌘."
         ) {
@@ -209,7 +215,7 @@ struct CommandPaletteView: View {
 
         list.append(PaletteEntry(
             id: "cmd.newfolder",
-            title: "Opprett ny mappe i aktivt panel",
+            title: workspace.tr("Opprett ny mappe i aktivt panel", "Create New Folder in Active Pane"),
             subtitle: workspace.activeTab.currentURL.path,
             icon: "folder.badge.plus",
             shortcut: "F7"
@@ -219,7 +225,7 @@ struct CommandPaletteView: View {
 
         list.append(PaletteEntry(
             id: "cmd.terminal",
-            title: "Åpne Terminal i aktiv mappe",
+            title: workspace.tr("Åpne Terminal i aktiv mappe", "Open Terminal in Active Folder"),
             subtitle: workspace.activeTab.currentURL.path,
             icon: "terminal.fill",
             shortcut: nil
@@ -229,7 +235,7 @@ struct CommandPaletteView: View {
 
         list.append(PaletteEntry(
             id: "cmd.copypath",
-            title: "Kopier full sti til utklippstavle",
+            title: workspace.tr("Kopier full sti til utklippstavle", "Copy Full Path to Clipboard"),
             subtitle: workspace.activeTab.primarySelectedItem?.url.path ?? workspace.activeTab.currentURL.path,
             icon: "doc.on.doc",
             shortcut: nil
@@ -239,8 +245,8 @@ struct CommandPaletteView: View {
 
         list.append(PaletteEntry(
             id: "cmd.settings",
-            title: "Åpne FlowFile-innstillinger",
-            subtitle: "Tilpass Space-tast, sidepanel og F-tast-rad",
+            title: workspace.tr("Åpne FlowFile-innstillinger", "Open FlowFile Settings"),
+            subtitle: workspace.tr("Språk, skydeling, tillatelser, tastatur og sidepanel", "Language, cloud sharing, permissions, keyboard & sidebar"),
             icon: "gearshape.fill",
             shortcut: "⌘,"
         ) {
@@ -251,7 +257,7 @@ struct CommandPaletteView: View {
         for fav in workspace.favorites {
             list.append(PaletteEntry(
                 id: "fav.\(fav.path)",
-                title: "Gå til: \(fav.title)",
+                title: "\(workspace.tr("Gå til", "Go to")): \(fav.title)",
                 subtitle: fav.path,
                 icon: fav.systemImage,
                 shortcut: nil
@@ -264,7 +270,7 @@ struct CommandPaletteView: View {
             if !workspace.favorites.contains(where: { $0.path == recent.path }) {
                 list.append(PaletteEntry(
                     id: "recent.\(recent.path)",
-                    title: "Nylig mappe: \(recent.lastPathComponent)",
+                    title: "\(workspace.tr("Nylig mappe", "Recent Folder")): \(recent.lastPathComponent)",
                     subtitle: recent.path,
                     icon: "clock.arrow.circlepath",
                     shortcut: nil
@@ -278,7 +284,7 @@ struct CommandPaletteView: View {
         for sub in workspace.activeTab.allItems where sub.isNavigableFolder {
             list.append(PaletteEntry(
                 id: "sub.\(sub.url.path)",
-                title: "Undermappe: \(sub.name)",
+                title: "\(workspace.tr("Undermappe", "Subfolder")): \(sub.name)",
                 subtitle: sub.url.path,
                 icon: "folder",
                 shortcut: nil
@@ -291,8 +297,8 @@ struct CommandPaletteView: View {
         guard !trimmed.isEmpty else { return Array(list.prefix(16)) }
 
         return list.filter {
-            $0.title.localizedCaseInsensitiveContains(trimmed) ||
-            $0.subtitle.localizedCaseInsensitiveContains(trimmed)
+            FileNameMatcher.matches(query: trimmed, in: $0.title, allowFuzzy: true) ||
+            FileNameMatcher.matches(query: trimmed, in: $0.subtitle, allowFuzzy: true)
         }
     }
 
@@ -310,7 +316,7 @@ struct CommandPaletteView: View {
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(Color.accentColor)
 
-                    TextField("Hopp til mappe eller kjør kommando...", text: $query)
+                    TextField(workspace.tr("Hopp til mappe eller kjør kommando...", "Jump to folder or run command..."), text: $query)
                         .textFieldStyle(.plain)
                         .font(.system(size: 15))
                         .focused($isSearchFocused)
@@ -331,60 +337,71 @@ struct CommandPaletteView: View {
 
                 Divider()
 
-                ScrollView {
-                    VStack(spacing: 3) {
-                        let visible = entries
-                        if visible.isEmpty {
-                            Text("Ingen treff for «\(query)»")
-                                .font(.system(size: 13))
-                                .foregroundStyle(.secondary)
-                                .padding(24)
-                        } else {
-                            ForEach(Array(visible.enumerated()), id: \.element.id) { idx, entry in
-                                let isHighlighted = idx == selectedIndex
-                                Button {
-                                    selectedIndex = idx
-                                    runSelected()
-                                } label: {
-                                    HStack(spacing: 10) {
-                                        Image(systemName: entry.icon)
-                                            .font(.system(size: 14))
-                                            .foregroundStyle(isHighlighted ? .white : Color.accentColor)
-                                            .frame(width: 22)
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(spacing: 3) {
+                            let visible = entries
+                            if visible.isEmpty {
+                                Text(workspace.tr("Ingen treff for «\(query)»", "No matches for “\(query)”"))
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(.secondary)
+                                    .padding(24)
+                            } else {
+                                ForEach(Array(visible.enumerated()), id: \.element.id) { idx, entry in
+                                    let isHighlighted = idx == selectedIndex
+                                    Button {
+                                        selectedIndex = idx
+                                        runSelected()
+                                    } label: {
+                                        HStack(spacing: 10) {
+                                            Image(systemName: entry.icon)
+                                                .font(.system(size: 14))
+                                                .foregroundStyle(isHighlighted ? .white : Color.accentColor)
+                                                .frame(width: 22)
 
-                                        VStack(alignment: .leading, spacing: 1) {
-                                            Text(entry.title)
-                                                .font(.system(size: 13, weight: .medium))
-                                                .foregroundStyle(isHighlighted ? .white : .primary)
-                                            Text(entry.subtitle)
-                                                .font(.system(size: 11, design: .monospaced))
-                                                .foregroundStyle(isHighlighted ? .white.opacity(0.8) : .secondary)
-                                                .lineLimit(1)
+                                            VStack(alignment: .leading, spacing: 1) {
+                                                Text(entry.title)
+                                                    .font(.system(size: 13, weight: .medium))
+                                                    .foregroundStyle(isHighlighted ? .white : .primary)
+                                                Text(entry.subtitle)
+                                                    .font(.system(size: 11, design: .monospaced))
+                                                    .foregroundStyle(isHighlighted ? .white.opacity(0.8) : .secondary)
+                                                    .lineLimit(1)
+                                            }
+
+                                            Spacer()
+
+                                            if let shortcut = entry.shortcut {
+                                                Text(shortcut)
+                                                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                                    .foregroundStyle(isHighlighted ? .white : .secondary)
+                                            }
                                         }
-
-                                        Spacer()
-
-                                        if let shortcut = entry.shortcut {
-                                            Text(shortcut)
-                                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                                                .foregroundStyle(isHighlighted ? .white : .secondary)
-                                        }
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 7)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                                .fill(isHighlighted ? Color.accentColor : Color.clear)
+                                        )
+                                        .contentShape(RoundedRectangle(cornerRadius: 8))
                                     }
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 7)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                            .fill(isHighlighted ? Color.accentColor : Color.clear)
-                                    )
-                                    .contentShape(RoundedRectangle(cornerRadius: 8))
+                                    .buttonStyle(.plain)
+                                    .id(entry.id)
                                 }
-                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(8)
+                    }
+                    .frame(maxHeight: 330)
+                    .onChange(of: selectedIndex) { _, newIdx in
+                        let visible = entries
+                        if newIdx >= 0 && newIdx < visible.count {
+                            withAnimation(.easeOut(duration: 0.12)) {
+                                proxy.scrollTo(visible[newIdx].id, anchor: .center)
                             }
                         }
                     }
-                    .padding(8)
                 }
-                .frame(maxHeight: 330)
             }
             .frame(width: 560)
             .liquidGlassPanel(cornerRadius: 16)

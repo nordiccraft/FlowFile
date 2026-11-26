@@ -1,0 +1,267 @@
+/* FlowFile — English (Base) */
+
+/* Language */
+"Automatic (follow macOS)" = "Automatic (follow macOS)";
+
+/* Menus — File */
+"New Tab" = "New Tab";
+"Close Active Tab" = "Close Active Tab";
+"New Folder..." = "New Folder...";
+"New Empty File..." = "New Empty File...";
+"Smart Share Hub (Share Selected)..." = "Smart Share Hub (Share Selected)...";
+
+/* Menus — Edit */
+"Undo File Operation" = "Undo File Operation";
+"Cut" = "Cut";
+"Copy" = "Copy";
+"Paste" = "Paste";
+"Select All" = "Select All";
+"Copy Full Path" = "Copy Full Path";
+"Rename..." = "Rename...";
+"Instant Filter in Active Folder" = "Instant Filter in Active Folder";
+"Deep Subfolder & Content Search..." = "Deep Subfolder & Content Search...";
+
+/* Menus — View */
+"View" = "View";
+"Switch to Single Pane" = "Switch to Single Pane";
+"Switch to Dual-Pane" = "Switch to Dual-Pane";
+"Exit Flat Subfolder View" = "Exit Flat Subfolder View";
+"Flat Subfolder View" = "Flat Subfolder View";
+"Hide Left Sidebar" = "Hide Left Sidebar";
+"Show Left Sidebar" = "Show Left Sidebar";
+"Hide Right Inspector" = "Hide Right Inspector";
+"Show Right Inspector" = "Show Right Inspector";
+"Hide Hidden Dotfiles" = "Hide Hidden Dotfiles";
+"Show Hidden Dotfiles" = "Show Hidden Dotfiles";
+"Detailed List View" = "Detailed List View";
+"Grid View (Thumbnails)" = "Grid View (Thumbnails)";
+"Refresh" = "Refresh";
+
+/* Menus — Go */
+"Go" = "Go";
+"Command Palette..." = "Command Palette...";
+"Edit Address Bar" = "Edit Address Bar";
+"Back" = "Back";
+"Forward" = "Forward";
+"Up One Folder Level" = "Up One Folder Level";
+"Home" = "Home";
+"Desktop" = "Desktop";
+"Downloads" = "Downloads";
+"Documents" = "Documents";
+"Applications" = "Applications";
+
+/* Menus — Tools & App */
+"Tools" = "Tools";
+"Disk Space Analyzer..." = "Disk Space Analyzer...";
+"Find Duplicate Files (SHA-256)..." = "Find Duplicate Files (SHA-256)...";
+"Save Current Workspace..." = "Save Current Workspace...";
+"Open Saved Workspace" = "Open Saved Workspace";
+"Batch Rename..." = "Batch Rename...";
+"Undo Last Batch Rename" = "Undo Last Batch Rename";
+"Hide Drop Shelf & Queue" = "Hide Drop Shelf & Queue";
+"Show Drop Shelf & Queue" = "Show Drop Shelf & Queue";
+"Add Selected to Drop Shelf" = "Add Selected to Drop Shelf";
+"Exit Folder Comparison" = "Exit Folder Comparison";
+"Compare Folders in Dual-Pane" = "Compare Folders in Dual-Pane";
+"Synchronize Folders..." = "Synchronize Folders...";
+"Convert / Resize Selected Images..." = "Convert / Resize Selected Images...";
+"Merge Selected into Single PDF" = "Merge Selected into Single PDF";
+"Compress Selected to .zip" = "Compress Selected to .zip";
+"Extract Selected Archive Here" = "Extract Selected Archive Here";
+"Switch Active Pane" = "Switch Active Pane";
+"Copy to Opposite Pane (F5)" = "Copy to Opposite Pane (F5)";
+"Move to Opposite Pane (F6)" = "Move to Opposite Pane (F6)";
+"Hide Embedded Terminal Drawer" = "Hide Embedded Terminal Drawer";
+"Show Embedded Terminal Drawer" = "Show Embedded Terminal Drawer";
+"Open macOS Terminal in Active Folder" = "Open macOS Terminal in Active Folder";
+"Check for Updates..." = "Check for Updates...";
+"Settings..." = "Settings...";
+"Start Interactive Walkthrough (Practice Mode)..." = "Start Interactive Walkthrough (Practice Mode)...";
+
+/* Toolbar & Navigation */
+"New" = "New";
+"New Folder (F7)" = "New Folder (F7)";
+"New Empty File" = "New Empty File";
+"New Tab (Cmd+T)" = "New Tab (Cmd+T)";
+"Rename" = "Rename";
+"Share" = "Share";
+"Delete" = "Delete";
+"Exit Diff" = "Exit Diff";
+"Go to" = "Go to";
+"1-Pane" = "1-Pane";
+"Copy Path" = "Copy Path";
+"Copied!" = "Copied!";
+"Copied" = "Copied";
+"Edit" = "Edit";
+"Copy →" = "Copy →";
+"Move →" = "Move →";
+"Copy (2-pane)" = "Copy (2-pane)";
+"Move (2-pane)" = "Move (2-pane)";
+"New Folder" = "New Folder";
+"Trash" = "Trash";
+
+/* Sidebar */
+"Quick Access" = "Quick Access";
+"Workspaces" = "Workspaces";
+"Save current layout..." = "Save current layout...";
+"Open Workspace" = "Open Workspace";
+"Delete Workspace" = "Delete Workspace";
+"Color Tags" = "Color Tags";
+"Cloud Storage" = "Cloud Storage";
+"This Mac" = "This Mac";
+"Folder Tree" = "Folder Tree";
+
+/* Table Columns, Context Menu & File Items */
+"Name" = "Name";
+"Status" = "Status";
+"Ext" = "Ext";
+"Size" = "Size";
+"Modified" = "Modified";
+"Kind" = "Kind";
+"Details" = "Details";
+"Grid" = "Grid";
+"Open" = "Open";
+"Open in New Tab" = "Open in New Tab";
+"Open in Opposite Pane" = "Open in Opposite Pane";
+"Remove from Quick Access" = "Remove from Quick Access";
+"Pin to Quick Access" = "Pin to Quick Access";
+"Show Package Contents as Folder" = "Show Package Contents as Folder";
+"Go to Original Location in FlowFile" = "Go to Original Location in FlowFile";
+"Open File's Subfolder" = "Open File's Subfolder";
+"Share... (⇧⌘S)" = "Share... (⇧⌘S)";
+"Quick Look (Space)" = "Quick Look (Space)";
+"Open in Text Editor (F4)" = "Open in Text Editor (F4)";
+"Keep on This Mac (Download now)" = "Keep on This Mac (Download now)";
+"Free Up Local Space (Online-only)" = "Free Up Local Space (Online-only)";
+"Mark / Calculate Folder Size (Shift+Space)" = "Mark / Calculate Folder Size (Shift+Space)";
+"Add to Drop Shelf (⇧⌘D)" = "Add to Drop Shelf (⇧⌘D)";
+"Cut (Cmd+X)" = "Cut (Cmd+X)";
+"Copy (Cmd+C)" = "Copy (Cmd+C)";
+"Create Shortcut in Opposite Pane" = "Create Shortcut in Opposite Pane";
+"Extract Entire Archive Here" = "Extract Entire Archive Here";
+"Convert / Resize Image(s)..." = "Convert / Resize Image(s)...";
+"Merge into Single PDF" = "Merge into Single PDF";
+"Clear Color Tags (⌃0)" = "Clear Color Tags (⌃0)";
+"Rename... (F2)" = "Rename... (F2)";
+"Batch Rename... (Cmd+M)" = "Batch Rename... (Cmd+M)";
+"Move to Trash (Delete)" = "Move to Trash (Delete)";
+"Delete Permanently... (Shift+Delete)" = "Delete Permanently... (Shift+Delete)";
+"Extract Entire Archive to Folder" = "Extract Entire Archive to Folder";
+"Exit Archive (Backspace)" = "Exit Archive (Backspace)";
+"Paste Here (Cmd+V)" = "Paste Here (Cmd+V)";
+"New Folder... (F7)" = "New Folder... (F7)";
+"Deep Search Here... (⇧⌘F)" = "Deep Search Here... (⇧⌘F)";
+"Analyze Disk Space Here..." = "Analyze Disk Space Here...";
+"Find Duplicate Files Here..." = "Find Duplicate Files Here...";
+"Show/Hide Embedded Terminal Drawer (Ctrl+`)" = "Show/Hide Embedded Terminal Drawer (Ctrl+`)";
+"Open in macOS Terminal" = "Open in macOS Terminal";
+"Reveal in macOS Finder" = "Reveal in macOS Finder";
+"Cloud only" = "Cloud only";
+"Stored locally" = "Stored locally";
+"Syncing" = "Syncing";
+"Folder Comparison" = "Folder Comparison";
+"Git: Modified" = "Git: Modified";
+"Git: Staged" = "Git: Staged";
+"Git: Untracked" = "Git: Untracked";
+"Git: Deleted" = "Git: Deleted";
+"Git: Conflict!" = "Git: Conflict!";
+"Git: Ignored" = "Git: Ignored";
+"Archive Folder" = "Archive Folder";
+"Archive File" = "Archive File";
+"archive file" = "archive file";
+"Shortcut" = "Shortcut";
+"Folder" = "Folder";
+"File" = "File";
+"file" = "file";
+"<SHORTCUT>" = "<SHORTCUT>";
+"<FOLDER>" = "<FOLDER>";
+
+/* Color Tag Names */
+"Red" = "Red";
+"Orange" = "Orange";
+"Yellow" = "Yellow";
+"Green" = "Green";
+"Blue" = "Blue";
+"Purple" = "Purple";
+"Gray" = "Gray";
+
+/* Settings & Dialogs */
+"FlowFile – Settings" = "FlowFile – Settings";
+"Done" = "Done";
+"Language & User Guide" = "Language & User Guide";
+"Language:" = "Language:";
+"Launch Interactive Tour" = "Launch Interactive Tour";
+"Direct Cloud Sharing (OneDrive & Google Drive OAuth)" = "Direct Cloud Sharing (OneDrive & Google Drive OAuth)";
+"Sign Out" = "Sign Out";
+"Sign In with Microsoft" = "Sign In with Microsoft";
+"Sign In with Google" = "Sign In with Google";
+"Signed out of Microsoft OneDrive" = "Signed out of Microsoft OneDrive";
+"Signed out of Google Drive" = "Signed out of Google Drive";
+"Signed in to Microsoft OneDrive!" = "Signed in to Microsoft OneDrive!";
+"Signed in to Google Drive!" = "Signed in to Google Drive!";
+"Azure App Client ID (optional for direct links)" = "Azure App Client ID (optional for direct links)";
+"Google OAuth Desktop Client ID" = "Google OAuth Desktop Client ID";
+"macOS Permissions" = "macOS Permissions";
+"FlowFile was updated and macOS reset permissions. Toggle Full Disk Access off and on in System Settings to restore." = "FlowFile was updated and macOS reset permissions. Toggle Full Disk Access off and on in System Settings to restore.";
+"Full Disk Access: Enabled" = "Full Disk Access: Enabled";
+"Full Disk Access: Not enabled" = "Full Disk Access: Not enabled";
+"Full Disk Access" = "Full Disk Access";
+"Files & Folders" = "Files & Folders";
+"Local Network" = "Local Network";
+"Automation" = "Automation";
+"Default File Browser in macOS" = "Default File Browser in macOS";
+"Current default: FlowFile" = "Current default: FlowFile";
+"Current default: macOS Finder" = "Current default: macOS Finder";
+"Re-apply FlowFile" = "Re-apply FlowFile";
+"Set FlowFile as Default" = "Set FlowFile as Default";
+"Restore Finder" = "Restore Finder";
+"Open external folders in:" = "Open external folders in:";
+"Keyboard & Quick Actions" = "Keyboard & Quick Actions";
+"Use Space for quick-mark + folder size (and Shift+Space / F3 for Quick Look)" = "Use Space for quick-mark + folder size (and Shift+Space / F3 for Quick Look)";
+"Always show bottom F3–F8 action bar (even in single-pane view)" = "Always show bottom F3–F8 action bar (even in single-pane view)";
+"Sidebar & File View" = "Sidebar & File View";
+"Auto-collapse left sidebar when switching to Dual-Pane (Cmd+D)" = "Auto-collapse left sidebar when switching to Dual-Pane (Cmd+D)";
+"Show hidden dotfiles (.dotfiles)" = "Show hidden dotfiles (.dotfiles)";
+
+/* Prompt Dialogs & Errors */
+"Create New Folder" = "Create New Folder";
+"Create New Empty File" = "Create New Empty File";
+"Rename (F2)" = "Rename (F2)";
+"Delete Permanently?" = "Delete Permanently?";
+"Folder name" = "Folder name";
+"File name (e.g. note.md)" = "File name (e.g. note.md)";
+"Current name" = "Current name";
+"New name" = "New name";
+"In" = "In";
+"more" = "more";
+"Cancel" = "Cancel";
+"Create" = "Create";
+"Save Name" = "Save Name";
+"Delete Permanently" = "Delete Permanently";
+"The name cannot be empty." = "The name cannot be empty.";
+"The name cannot contain “/” or “:”." = "The name cannot contain “/” or “:”.";
+"“%@” already exists in this folder." = "“%@” already exists in this folder.";
+"No access to folder: %@" = "No access to folder: %@";
+"Action Could Not Be Completed" = "Action Could Not Be Completed";
+
+/* Command Palette */
+"Jump to folder or run command..." = "Jump to folder or run command...";
+"Recent Folder" = "Recent Folder";
+"Subfolder" = "Subfolder";
+"Open FlowFile Settings" = "Open FlowFile Settings";
+"Language, cloud sharing, permissions, keyboard & sidebar" = "Language, cloud sharing, permissions, keyboard & sidebar";
+"Smart Share Hub – Share Selected Files/Folders" = "Smart Share Hub – Share Selected Files/Folders";
+"Multi-Rename Tool – Batch Rename" = "Multi-Rename Tool – Batch Rename";
+"Compare Left & Right Folders (Dual-Pane Diff)" = "Compare Left & Right Folders (Dual-Pane Diff)";
+"Create New Folder in Active Pane" = "Create New Folder in Active Pane";
+"Open Terminal in Active Folder" = "Open Terminal in Active Folder";
+"Copy Full Path to Clipboard" = "Copy Full Path to Clipboard";
+"Folder Comparison Active" = "Folder Comparison Active";
+"Hide identical" = "Hide identical";
+"Synchronize..." = "Synchronize...";
+"Exit Comparison" = "Exit Comparison";
+"Exit Flat View" = "Exit Flat View";
+"Show All" = "Show All";
+"Search Entire Mac" = "Search Entire Mac";
+"LEFT" = "LEFT";
+"RIGHT" = "RIGHT";

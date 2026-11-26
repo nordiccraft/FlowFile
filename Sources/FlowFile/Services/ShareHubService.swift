@@ -67,6 +67,10 @@ private final class ShareServiceDelegateBridge: NSObject, NSSharingServiceDelega
     func sharingService(_ sharingService: NSSharingService, didFailToShareItems items: [Any], error: Error) {
         let cb = onComplete
         Self.activeBridges.removeValue(forKey: ObjectIdentifier(self))
+        let nsErr = error as NSError
+        if nsErr.domain == NSCocoaErrorDomain && nsErr.code == NSUserCancelledError {
+            return
+        }
         cb(.failure(error))
     }
 }
@@ -106,6 +110,33 @@ enum ShareHubService {
 
     static func installedOutlookURL() -> URL? {
         NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.microsoft.Outlook")
+    }
+
+    static func installedTeamsURL() -> URL? {
+        NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.microsoft.teams2")
+            ?? NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.microsoft.teams")
+    }
+
+    static func installedSlackURL() -> URL? {
+        NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.tinyspeck.slackmacgap")
+    }
+
+    /// Brings a chat app (e.g. Microsoft Teams `com.microsoft.teams2` or Slack `com.tinyspeck.slackmacgap`)
+    /// to the foreground, launching it if installed and not yet running.
+    @MainActor
+    @discardableResult
+    static func bringChatAppToFront(bundleID: String) -> Bool {
+        if let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first {
+            running.activate(options: [.activateAllWindows])
+            return true
+        }
+        guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
+            return false
+        }
+        let cfg = NSWorkspace.OpenConfiguration()
+        cfg.activates = true
+        NSWorkspace.shared.openApplication(at: appURL, configuration: cfg) { _, _ in }
+        return true
     }
 
     static func defaultEmailAppBundleID() -> String? {
@@ -499,69 +530,85 @@ enum ShareHubService {
 
     /// Sets ZIP General Purpose Bit 11 (`0x0800`, Language Encoding Flag) on every entry whose filename contains
     /// non-ASCII UTF-8 bytes, in both Local File Headers (`0x04034b50`) and Central Directory Headers (`0x02014b50`).
-    /// This guarantees Norwegian `æ/ø/å` filenames display properly in Windows and Android archive tools.
+    /// Streams via `FileHandle` (never loads the full archive into RAM) so multi-GB ZIPs patch cleanly.
     @discardableResult
     static func patchZipUTF8Flags(at zipURL: URL) throws -> Int {
-        var data = try Data(contentsOf: zipURL)
-        guard data.count >= 22 else { return 0 }
+        let handle = try FileHandle(forUpdating: zipURL)
+        defer { try? handle.close() }
 
-        func readUInt16(_ offset: Int) -> UInt16 {
-            UInt16(data[offset]) | (UInt16(data[offset + 1]) << 8)
+        let fileSize = Int(try handle.seekToEnd())
+        guard fileSize >= 22 else { return 0 }
+
+        func readUInt16(_ buf: Data, _ offset: Int) -> UInt16 {
+            UInt16(buf[offset]) | (UInt16(buf[offset + 1]) << 8)
         }
-        func readUInt32(_ offset: Int) -> UInt32 {
-            UInt32(data[offset])
-                | (UInt32(data[offset + 1]) << 8)
-                | (UInt32(data[offset + 2]) << 16)
-                | (UInt32(data[offset + 3]) << 24)
-        }
-        func writeUInt16(_ value: UInt16, at offset: Int) {
-            data[offset] = UInt8(value & 0xFF)
-            data[offset + 1] = UInt8((value >> 8) & 0xFF)
+        func readUInt32(_ buf: Data, _ offset: Int) -> UInt32 {
+            UInt32(buf[offset])
+                | (UInt32(buf[offset + 1]) << 8)
+                | (UInt32(buf[offset + 2]) << 16)
+                | (UInt32(buf[offset + 3]) << 24)
         }
 
-        // Locate End of Central Directory record (0x06054b50) scanning backwards from end (max comment = 65535)
-        let minOffset = max(0, data.count - 65_557)
-        var eocdOffset: Int? = nil
-        var pos = data.count - 22
-        while pos >= minOffset {
-            if readUInt32(pos) == 0x06054B50 {
-                eocdOffset = pos
+        // 1. Read only the tail chunk (at most 65,557 bytes) to locate End of Central Directory (0x06054b50)
+        let tailStart = max(0, fileSize - 65_557)
+        try handle.seek(toOffset: UInt64(tailStart))
+        guard let tailData = try handle.readToEnd(), tailData.count >= 22 else { return 0 }
+
+        var eocdInTail: Int? = nil
+        var pos = tailData.count - 22
+        while pos >= 0 {
+            if readUInt32(tailData, pos) == 0x06054B50 {
+                eocdInTail = pos
                 break
             }
             pos -= 1
         }
-        guard let eocd = eocdOffset else { return 0 }
+        guard let eocd = eocdInTail else { return 0 }
 
-        let totalEntries = Int(readUInt16(eocd + 10))
-        let cdOffset = Int(readUInt32(eocd + 16))
-        guard cdOffset >= 0, cdOffset < data.count else { return 0 }
+        let totalEntries = Int(readUInt16(tailData, eocd + 10))
+        let cdSize = Int(readUInt32(tailData, eocd + 12))
+        let cdOffset = Int(readUInt32(tailData, eocd + 16))
+        guard cdOffset >= 0, cdSize > 0, cdOffset + cdSize <= fileSize else { return 0 }
+
+        // 2. Read only the Central Directory bytes (typically a few KB even for multi-GB archives)
+        try handle.seek(toOffset: UInt64(cdOffset))
+        guard let cdData = try handle.read(upToCount: cdSize), cdData.count >= 46 else { return 0 }
 
         var patchedCount = 0
-        var cursor = cdOffset
+        var cursor = 0
 
         for _ in 0..<totalEntries {
-            guard cursor + 46 <= data.count, readUInt32(cursor) == 0x02014B50 else { break }
-            let nameLen = Int(readUInt16(cursor + 28))
-            let extraLen = Int(readUInt16(cursor + 30))
-            let commentLen = Int(readUInt16(cursor + 32))
-            let localHeaderOffset = Int(readUInt32(cursor + 42))
-            guard cursor + 46 + nameLen <= data.count else { break }
+            guard cursor + 46 <= cdData.count, readUInt32(cdData, cursor) == 0x02014B50 else { break }
+            let nameLen = Int(readUInt16(cdData, cursor + 28))
+            let extraLen = Int(readUInt16(cdData, cursor + 30))
+            let commentLen = Int(readUInt16(cdData, cursor + 32))
+            let localHeaderOffset = Int(readUInt32(cdData, cursor + 42))
+            guard cursor + 46 + nameLen <= cdData.count else { break }
 
-            let nameSlice = data[(cursor + 46)..<(cursor + 46 + nameLen)]
+            let nameSlice = cdData[(cursor + 46)..<(cursor + 46 + nameLen)]
             let hasNonASCII = nameSlice.contains { $0 >= 0x80 }
 
             if hasNonASCII {
-                let cdFlags = readUInt16(cursor + 8)
+                let cdFlags = readUInt16(cdData, cursor + 8)
                 if (cdFlags & 0x0800) == 0 {
-                    writeUInt16(cdFlags | 0x0800, at: cursor + 8)
+                    let patched = cdFlags | 0x0800
+                    let flagBytes = Data([UInt8(patched & 0xFF), UInt8((patched >> 8) & 0xFF)])
+                    try handle.seek(toOffset: UInt64(cdOffset + cursor + 8))
+                    try handle.write(contentsOf: flagBytes)
                     patchedCount += 1
                 }
-                if localHeaderOffset >= 0,
-                   localHeaderOffset + 30 <= data.count,
-                   readUInt32(localHeaderOffset) == 0x04034B50 {
-                    let lhFlags = readUInt16(localHeaderOffset + 6)
-                    if (lhFlags & 0x0800) == 0 {
-                        writeUInt16(lhFlags | 0x0800, at: localHeaderOffset + 6)
+                if localHeaderOffset >= 0, localHeaderOffset + 30 <= fileSize {
+                    try handle.seek(toOffset: UInt64(localHeaderOffset))
+                    if let lhData = try handle.read(upToCount: 30),
+                       lhData.count == 30,
+                       readUInt32(lhData, 0) == 0x04034B50 {
+                        let lhFlags = readUInt16(lhData, 6)
+                        if (lhFlags & 0x0800) == 0 {
+                            let patchedLH = lhFlags | 0x0800
+                            let lhFlagBytes = Data([UInt8(patchedLH & 0xFF), UInt8((patchedLH >> 8) & 0xFF)])
+                            try handle.seek(toOffset: UInt64(localHeaderOffset + 6))
+                            try handle.write(contentsOf: lhFlagBytes)
+                        }
                     }
                 }
             }
@@ -569,9 +616,6 @@ enum ShareHubService {
             cursor += 46 + nameLen + extraLen + commentLen
         }
 
-        if patchedCount > 0 {
-            try data.write(to: zipURL, options: .atomic)
-        }
         return patchedCount
     }
 
@@ -588,7 +632,17 @@ enum ShareHubService {
         _ urls: [URL],
         completion: ((Result<Void, Error>) -> Void)? = nil
     ) -> Bool {
-        if let service = NSSharingService(named: .composeEmail), service.canPerform(withItems: urls) {
+        let bundleID = defaultEmailAppBundleID()?.lowercased()
+
+        // NEVER route Outlook through NSSharingService(.composeEmail) — AppKit hardcodes .composeEmail to Apple Mail!
+        if bundleID == "com.microsoft.outlook" {
+            return shareViaOutlook(urls, completion: completion)
+        }
+
+        // Use Apple Mail's native NSSharingService only when Apple Mail is the default (or unknown)
+        if (bundleID == nil || bundleID == "com.apple.mail"),
+           let service = NSSharingService(named: .composeEmail),
+           service.canPerform(withItems: urls) {
             if let completion {
                 let bridge = ShareServiceDelegateBridge(onComplete: completion)
                 service.delegate = bridge
@@ -596,14 +650,23 @@ enum ShareHubService {
             service.perform(withItems: urls)
             return true
         }
-        // Never fall back to opening files in a web browser (e.g. Chrome set as mailto handler)
-        if !isLikelyBrowserBundleID(defaultEmailAppBundleID()),
+
+        // Other native desktop email clients (Spark, Thunderbird, Mimestream, etc.) — never fall back to a web browser
+        if !isLikelyBrowserBundleID(bundleID),
            let mailto = URL(string: "mailto:"),
            let mailAppURL = NSWorkspace.shared.urlForApplication(toOpen: mailto) {
-            NSWorkspace.shared.open(urls, withApplicationAt: mailAppURL, configuration: NSWorkspace.OpenConfiguration())
-            completion?(.success(()))
+            NSWorkspace.shared.open(urls, withApplicationAt: mailAppURL, configuration: NSWorkspace.OpenConfiguration()) { _, error in
+                DispatchQueue.main.async {
+                    if let error {
+                        completion?(.failure(error))
+                    } else {
+                        completion?(.success(()))
+                    }
+                }
+            }
             return true
         }
+
         completion?(.failure(ShareHubError.serviceUnavailable(defaultEmailAppName())))
         return false
     }
@@ -614,20 +677,130 @@ enum ShareHubService {
         return urls.contains { importExts.contains($0.pathExtension.lowercased()) }
     }
 
+    /// Layered Outlook attachment handoff:
+    /// 1. AppleScript via `/usr/bin/osascript` argv (zero injection) — creates ONE outgoing draft with all attachments,
+    ///    works in Legacy Outlook and modern New Outlook (16.89+), and safely attaches `.ics`/`.eml`/`.vcf`.
+    /// 2. Fallback: if AppleScript fails (older New Outlook or Automation TCC denied), auto-zips multiple files or
+    ///    importable types (`.eml`/`.ics`/`.vcf`/`.msg`/`.olm`) and opens with Outlook via `NSWorkspace.open` with real error handling.
     @MainActor
     static func shareViaOutlook(
         _ urls: [URL],
         completion: ((Result<Void, Error>) -> Void)? = nil
     ) -> Bool {
-        if isDefaultEmailAppOutlook() {
-            return shareViaDefaultEmail(urls, completion: completion)
+        guard !urls.isEmpty else {
+            completion?(.failure(ShareHubError.emptySelection))
+            return false
         }
         guard let outlookURL = installedOutlookURL() else {
-            return shareViaDefaultEmail(urls, completion: completion)
+            completion?(.failure(ShareHubError.serviceUnavailable("Microsoft Outlook")))
+            return false
         }
-        NSWorkspace.shared.open(urls, withApplicationAt: outlookURL, configuration: NSWorkspace.OpenConfiguration())
-        completion?(.success(()))
+
+        let filePaths = urls.map { $0.standardizedFileURL.path }
+
+        Task.detached(priority: .userInitiated) {
+            // Layer 1: AppleScript via osascript argv (no string interpolation / injection)
+            let script = """
+            on run argv
+                tell application "Microsoft Outlook"
+                    set newMsg to make new outgoing message
+                    repeat with p in argv
+                        make new attachment at newMsg with properties {file:(POSIX file (contents of p))}
+                    end repeat
+                    open newMsg
+                    activate
+                end tell
+            end run
+            """
+
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+            proc.arguments = ["-e", script, "--"] + filePaths
+            proc.standardOutput = FileHandle.nullDevice
+            proc.standardError = FileHandle.nullDevice
+
+            var appleScriptSucceeded = false
+            do {
+                try proc.run()
+                proc.waitUntilExit()
+                appleScriptSucceeded = (proc.terminationStatus == 0)
+            } catch {
+                appleScriptSucceeded = false
+            }
+
+            if appleScriptSucceeded {
+                await MainActor.run {
+                    completion?(.success(()))
+                }
+                return
+            }
+
+            // Layer 2: Fallback via NSWorkspace.open (auto-zip if multiple files or Outlook-importable types)
+            var effectiveURLs = urls
+            if urls.count > 1 || containsOutlookImportableTypes(urls) {
+                if let zipped = try? createQuickCleanZipForOutlookFallback(urls) {
+                    effectiveURLs = [zipped]
+                }
+            }
+            let urlsToOpen = effectiveURLs
+
+            await MainActor.run {
+                NSWorkspace.shared.open(
+                    urlsToOpen,
+                    withApplicationAt: outlookURL,
+                    configuration: NSWorkspace.OpenConfiguration()
+                ) { _, error in
+                    DispatchQueue.main.async {
+                        if let error {
+                            completion?(.failure(error))
+                        } else {
+                            completion?(.success(()))
+                        }
+                    }
+                }
+            }
+        }
         return true
+    }
+
+    private static func createQuickCleanZipForOutlookFallback(_ urls: [URL]) throws -> URL {
+        let fm = FileManager.default
+        try fm.createDirectory(at: stagingBaseDirectory, withIntermediateDirectories: true)
+        let sessionRoot = stagingBaseDirectory
+            .appendingPathComponent("\(stagingPrefix)Outlook_\(UUID().uuidString.prefix(8))", isDirectory: true)
+        let stagingDir = sessionRoot.appendingPathComponent("staged", isDirectory: true)
+        try fm.createDirectory(at: stagingDir, withIntermediateDirectories: true)
+
+        var stagedNames: [String] = []
+        for url in urls {
+            let nfcName = url.lastPathComponent.precomposedStringWithCanonicalMapping
+            let dst = uniqueNFCURL(named: nfcName, in: stagingDir)
+            try fm.copyItem(at: url, to: dst)
+            stagedNames.append(dst.lastPathComponent)
+        }
+
+        let base = sanitizeArchiveBaseName(urls.first?.deletingPathExtension().lastPathComponent ?? "Outlook-vedlegg")
+        let zipURL = sessionRoot.appendingPathComponent("\(base).zip")
+
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
+        proc.currentDirectoryURL = stagingDir
+        var args = ["-r", "-q", "-X", "-y", zipURL.path]
+        for name in stagedNames {
+            args.append(name.hasPrefix("-") ? "./\(name)" : name)
+        }
+        args.append(contentsOf: ["-x", "*.DS_Store", "*__MACOSX*", "*/._*", "._*"])
+        proc.arguments = args
+
+        try proc.run()
+        proc.waitUntilExit()
+        guard proc.terminationStatus == 0, fm.fileExists(atPath: zipURL.path) else {
+            try? fm.removeItem(at: sessionRoot)
+            throw ShareHubError.zipCreationFailed
+        }
+        _ = try? patchZipUTF8Flags(at: zipURL)
+        try? fm.removeItem(at: stagingDir)
+        return zipURL
     }
 
     @MainActor

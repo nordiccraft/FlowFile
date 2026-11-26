@@ -3,6 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "FlowFile",
+    defaultLocalization: "en",
     platforms: [
         .macOS(.v26)
     ],
@@ -13,6 +14,9 @@ let package = Package(
         .executableTarget(
             name: "FlowFile",
             path: "Sources/FlowFile",
+            resources: [
+                .process("Resources")
+            ],
             linkerSettings: [
                 .linkedFramework("AppKit"),
                 .linkedFramework("SwiftUI"),

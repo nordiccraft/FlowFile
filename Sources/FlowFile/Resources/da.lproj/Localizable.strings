@@ -1,0 +1,267 @@
+/* FlowFile — Dansk */
+
+/* Language */
+"Automatic (follow macOS)" = "Automatisk (følg macOS)";
+
+/* Menus — File */
+"New Tab" = "Ny fane";
+"Close Active Tab" = "Luk aktiv fane";
+"New Folder..." = "Ny mappe...";
+"New Empty File..." = "Ny tom fil...";
+"Smart Share Hub (Share Selected)..." = "Smart delingscenter (Del valgte)...";
+
+/* Menus — Edit */
+"Undo File Operation" = "Fortryd filhandling";
+"Cut" = "Klip";
+"Copy" = "Kopiér";
+"Paste" = "Sæt ind";
+"Select All" = "Vælg alt";
+"Copy Full Path" = "Kopiér fuld sti";
+"Rename..." = "Omdøb...";
+"Instant Filter in Active Folder" = "Lynfilter i aktiv mappe";
+"Deep Subfolder & Content Search..." = "Dybsøgning i undermapper & filindhold...";
+
+/* Menus — View */
+"View" = "Visning";
+"Switch to Single Pane" = "Skift til enkeltpanel";
+"Switch to Dual-Pane" = "Skift til dobbeltpanel";
+"Exit Flat Subfolder View" = "Afslut flad undermappevisning";
+"Flat Subfolder View" = "Flad visning (alle filer fra undermapper)";
+"Hide Left Sidebar" = "Skjul venstre sidepanel";
+"Show Left Sidebar" = "Vis venstre sidepanel";
+"Hide Right Inspector" = "Skjul højre infopanel";
+"Show Right Inspector" = "Vis højre infopanel";
+"Hide Hidden Dotfiles" = "Skjul skjulte punktfiler";
+"Show Hidden Dotfiles" = "Vis skjulte punktfiler";
+"Detailed List View" = "Detaljeret listevisning";
+"Grid View (Thumbnails)" = "Gittervisning (Miniaturer)";
+"Refresh" = "Opdater";
+
+/* Menus — Go */
+"Go" = "Gå til";
+"Command Palette..." = "Kommandopalet...";
+"Edit Address Bar" = "Rediger adresselinje";
+"Back" = "Tilbage";
+"Forward" = "Frem";
+"Up One Folder Level" = "Op ét mappeniveau";
+"Home" = "Hjem";
+"Desktop" = "Skrivebord";
+"Downloads" = "Overførsler";
+"Documents" = "Dokumenter";
+"Applications" = "Programmer";
+
+/* Menus — Tools & App */
+"Tools" = "Værktøjer";
+"Disk Space Analyzer..." = "Diskpladsanalyse...";
+"Find Duplicate Files (SHA-256)..." = "Find duplikatfiler (SHA-256)...";
+"Save Current Workspace..." = "Gem aktuelt arbejdsområde...";
+"Open Saved Workspace" = "Åbn gemt arbejdsområde";
+"Batch Rename..." = "Masseomdøbning...";
+"Undo Last Batch Rename" = "Fortryd seneste masseomdøbning";
+"Hide Drop Shelf & Queue" = "Skjul Drop-hylde & filkø";
+"Show Drop Shelf & Queue" = "Vis Drop-hylde & filkø";
+"Add Selected to Drop Shelf" = "Tilføj valgte til Drop-hylde";
+"Exit Folder Comparison" = "Afslut mappesammenligning";
+"Compare Folders in Dual-Pane" = "Sammenlign mapper i dobbeltpanel";
+"Synchronize Folders..." = "Synkroniser mapper...";
+"Convert / Resize Selected Images..." = "Konverter / skaler valgte billeder...";
+"Merge Selected into Single PDF" = "Flet valgte til én PDF";
+"Compress Selected to .zip" = "Komprimer valgte til .zip";
+"Extract Selected Archive Here" = "Udpak valgt arkiv her";
+"Switch Active Pane" = "Skift aktivt panel";
+"Copy to Opposite Pane (F5)" = "Kopiér til modsatte panel (F5)";
+"Move to Opposite Pane (F6)" = "Flyt til modsatte panel (F6)";
+"Hide Embedded Terminal Drawer" = "Skjul indbygget terminal-skuffe";
+"Show Embedded Terminal Drawer" = "Vis indbygget terminal-skuffe";
+"Open macOS Terminal in Active Folder" = "Åbn macOS Terminal i aktiv mappe";
+"Check for Updates..." = "Søg efter opdateringer...";
+"Settings..." = "Indstillinger...";
+"Start Interactive Walkthrough (Practice Mode)..." = "Start interaktiv gennemgang (Øvelsestilstand)...";
+
+/* Toolbar & Navigation */
+"New" = "Ny";
+"New Folder (F7)" = "Ny mappe (F7)";
+"New Empty File" = "Ny tom fil";
+"New Tab (Cmd+T)" = "Ny fane (Cmd+T)";
+"Rename" = "Omdøb";
+"Share" = "Del";
+"Delete" = "Slet";
+"Exit Diff" = "Afslut diff";
+"Go to" = "Gå til";
+"1-Pane" = "1-Panel";
+"Copy Path" = "Kopiér sti";
+"Copied!" = "Kopieret!";
+"Copied" = "Kopieret";
+"Edit" = "Rediger";
+"Copy →" = "Kopiér →";
+"Move →" = "Flyt →";
+"Copy (2-pane)" = "Kopiér (2-panel)";
+"Move (2-pane)" = "Flyt (2-panel)";
+"New Folder" = "Ny mappe";
+"Trash" = "Papirkurv";
+
+/* Sidebar */
+"Quick Access" = "Hurtig adgang";
+"Workspaces" = "Arbejdsområder";
+"Save current layout..." = "Gem nuværende layout...";
+"Open Workspace" = "Åbn arbejdsområde";
+"Delete Workspace" = "Slet arbejdsområde";
+"Color Tags" = "Farvemærker";
+"Cloud Storage" = "Skylagring";
+"This Mac" = "Denne Mac";
+"Folder Tree" = "Mappetræ";
+
+/* Table Columns, Context Menu & File Items */
+"Name" = "Navn";
+"Status" = "Status";
+"Ext" = "Endelse";
+"Size" = "Størrelse";
+"Modified" = "Ændret";
+"Kind" = "Type";
+"Details" = "Detaljer";
+"Grid" = "Gitter";
+"Open" = "Åbn";
+"Open in New Tab" = "Åbn i ny fane";
+"Open in Opposite Pane" = "Åbn i modsatte panel";
+"Remove from Quick Access" = "Fjern fra Hurtig adgang";
+"Pin to Quick Access" = "Fastgør til Hurtig adgang";
+"Show Package Contents as Folder" = "Vis pakkeindhold som mappe";
+"Go to Original Location in FlowFile" = "Gå til originalens placering i FlowFile";
+"Open File's Subfolder" = "Åbn filens undermappe";
+"Share... (⇧⌘S)" = "Del... (⇧⌘S)";
+"Quick Look (Space)" = "Quick Look (Mellemrum)";
+"Open in Text Editor (F4)" = "Åbn i teksteditor (F4)";
+"Keep on This Mac (Download now)" = "Behold på denne Mac (Hent nu)";
+"Free Up Local Space (Online-only)" = "Frigør lokal plads (Kun online)";
+"Mark / Calculate Folder Size (Shift+Space)" = "Marker / Beregn mappestørrelse (Shift+Mellemrum)";
+"Add to Drop Shelf (⇧⌘D)" = "Tilføj til Drop-hylde (⇧⌘D)";
+"Cut (Cmd+X)" = "Klip (Cmd+X)";
+"Copy (Cmd+C)" = "Kopiér (Cmd+C)";
+"Create Shortcut in Opposite Pane" = "Opret genvej i modsatte panel";
+"Extract Entire Archive Here" = "Udpak hele arkivet her";
+"Convert / Resize Image(s)..." = "Konverter / skaler billede(r)...";
+"Merge into Single PDF" = "Flet til én PDF";
+"Clear Color Tags (⌃0)" = "Fjern farvemærker (⌃0)";
+"Rename... (F2)" = "Omdøb... (F2)";
+"Batch Rename... (Cmd+M)" = "Masseomdøbning... (Cmd+M)";
+"Move to Trash (Delete)" = "Flyt til papirkurv (Delete)";
+"Delete Permanently... (Shift+Delete)" = "Slet permanent... (Shift+Delete)";
+"Extract Entire Archive to Folder" = "Udpak hele arkivet til mappe";
+"Exit Archive (Backspace)" = "Forlad arkiv (Backspace)";
+"Paste Here (Cmd+V)" = "Sæt ind her (Cmd+V)";
+"New Folder... (F7)" = "Ny mappe... (F7)";
+"Deep Search Here... (⇧⌘F)" = "Dybsøg her... (⇧⌘F)";
+"Analyze Disk Space Here..." = "Analyser diskplads her...";
+"Find Duplicate Files Here..." = "Find duplikatfiler her...";
+"Show/Hide Embedded Terminal Drawer (Ctrl+`)" = "Vis/skjul indbygget terminal-skuffe (Ctrl+`)";
+"Open in macOS Terminal" = "Åbn i macOS Terminal";
+"Reveal in macOS Finder" = "Vis i macOS Finder";
+"Cloud only" = "Kun i skyen";
+"Stored locally" = "Gemt lokalt";
+"Syncing" = "Synkroniserer";
+"Folder Comparison" = "Mappesammenligning";
+"Git: Modified" = "Git: Ændret";
+"Git: Staged" = "Git: Klargjort";
+"Git: Untracked" = "Git: Usporet";
+"Git: Deleted" = "Git: Slettet";
+"Git: Conflict!" = "Git: Konflikt!";
+"Git: Ignored" = "Git: Ignoreret";
+"Archive Folder" = "Arkivmappe";
+"Archive File" = "Arkivfil";
+"archive file" = "arkivfil";
+"Shortcut" = "Genvej";
+"Folder" = "Mappe";
+"File" = "Fil";
+"file" = "fil";
+"<SHORTCUT>" = "<GENVEJ>";
+"<FOLDER>" = "<MAPPE>";
+
+/* Color Tag Names */
+"Red" = "Rød";
+"Orange" = "Orange";
+"Yellow" = "Gul";
+"Green" = "Grøn";
+"Blue" = "Blå";
+"Purple" = "Lilla";
+"Gray" = "Grå";
+
+/* Settings & Dialogs */
+"FlowFile – Settings" = "FlowFile – Indstillinger";
+"Done" = "Færdig";
+"Language & User Guide" = "Sprog & Brugervejledning";
+"Language:" = "Sprog:";
+"Launch Interactive Tour" = "Start interaktiv rundvisning";
+"Direct Cloud Sharing (OneDrive & Google Drive OAuth)" = "Direkte skydeling (OneDrive & Google Drive OAuth)";
+"Sign Out" = "Log ud";
+"Sign In with Microsoft" = "Log ind med Microsoft";
+"Sign In with Google" = "Log ind med Google";
+"Signed out of Microsoft OneDrive" = "Logget ud af Microsoft OneDrive";
+"Signed out of Google Drive" = "Logget ud af Google Drive";
+"Signed in to Microsoft OneDrive!" = "Logget ind på Microsoft OneDrive!";
+"Signed in to Google Drive!" = "Logget ind på Google Drive!";
+"Azure App Client ID (optional for direct links)" = "Azure App Client ID (valgfrit til direkte links)";
+"Google OAuth Desktop Client ID" = "Google OAuth Desktop Client ID";
+"macOS Permissions" = "macOS-tilladelser";
+"FlowFile was updated and macOS reset permissions. Toggle Full Disk Access off and on in System Settings to restore." = "FlowFile blev opdateret, og macOS nulstillede tilladelser. Slå Fuld diskadgang fra og til i Systemindstillinger for at gendanne.";
+"Full Disk Access: Enabled" = "Fuld diskadgang: Aktiveret";
+"Full Disk Access: Not enabled" = "Fuld diskadgang: Ikke aktiveret";
+"Full Disk Access" = "Fuld diskadgang";
+"Files & Folders" = "Filer og mapper";
+"Local Network" = "Lokalt netværk";
+"Automation" = "Automatisering";
+"Default File Browser in macOS" = "Standard filhåndtering i macOS";
+"Current default: FlowFile" = "Aktuel standard: FlowFile";
+"Current default: macOS Finder" = "Aktuel standard: macOS Finder";
+"Re-apply FlowFile" = "Opdater registrering";
+"Set FlowFile as Default" = "Sæt FlowFile som standard";
+"Restore Finder" = "Gendan til Finder";
+"Open external folders in:" = "Åbn eksterne mapper i:";
+"Keyboard & Quick Actions" = "Tastatur & Hurtighandlinger";
+"Use Space for quick-mark + folder size (and Shift+Space / F3 for Quick Look)" = "Brug Mellemrum til hurtigmarkering + mappestørrelse (og Shift+Mellemrum / F3 til Quick Look)";
+"Always show bottom F3–F8 action bar (even in single-pane view)" = "Vis altid F3–F8-handlingslinjen nederst (også i enkeltpanelvisning)";
+"Sidebar & File View" = "Sidepanel & Filvisning";
+"Auto-collapse left sidebar when switching to Dual-Pane (Cmd+D)" = "Skjul venstre sidepanel automatisk ved skift til dobbeltpanel (Cmd+D)";
+"Show hidden dotfiles (.dotfiles)" = "Vis skjulte punktfiler (.dotfiles)";
+
+/* Prompt Dialogs & Errors */
+"Create New Folder" = "Opret ny mappe";
+"Create New Empty File" = "Opret ny tom fil";
+"Rename (F2)" = "Omdøb (F2)";
+"Delete Permanently?" = "Slet permanent?";
+"Folder name" = "Mappenavn";
+"File name (e.g. note.md)" = "Filnavn (f.eks. note.md)";
+"Current name" = "Nuværende navn";
+"New name" = "Nyt navn";
+"In" = "I";
+"more" = "flere";
+"Cancel" = "Annuller";
+"Create" = "Opret";
+"Save Name" = "Gem navn";
+"Delete Permanently" = "Slet permanent";
+"The name cannot be empty." = "Navnet må ikke være tomt.";
+"The name cannot contain “/” or “:”." = "Navnet må ikke indeholde “/” eller “:”.";
+"“%@” already exists in this folder." = "“%@” findes allerede i denne mappe.";
+"No access to folder: %@" = "Ingen adgang til mappen: %@";
+"Action Could Not Be Completed" = "Handlingen kunne ikke udføres";
+
+/* Command Palette */
+"Jump to folder or run command..." = "Hop til mappe eller kør kommando...";
+"Recent Folder" = "Seneste mappe";
+"Subfolder" = "Undermappe";
+"Open FlowFile Settings" = "Åbn FlowFile-indstillinger";
+"Language, cloud sharing, permissions, keyboard & sidebar" = "Sprog, skydeling, tilladelser, tastatur & sidepanel";
+"Smart Share Hub – Share Selected Files/Folders" = "Smart delingscenter – Del valgte filer/mapper";
+"Multi-Rename Tool – Batch Rename" = "Multi-Rename Tool – Masseomdøbning";
+"Compare Left & Right Folders (Dual-Pane Diff)" = "Sammenlign venstre og højre mappe (Dual-Pane Diff)";
+"Create New Folder in Active Pane" = "Opret ny mappe i aktivt panel";
+"Open Terminal in Active Folder" = "Åbn Terminal i aktiv mappe";
+"Copy Full Path to Clipboard" = "Kopiér fuld sti til udklipsholder";
+"Folder Comparison Active" = "Mappesammenligning aktiv";
+"Hide identical" = "Skjul identiske";
+"Synchronize..." = "Synkroniser...";
+"Exit Comparison" = "Afslut sammenligning";
+"Exit Flat View" = "Afslut flad visning";
+"Show All" = "Vis alle";
+"Search Entire Mac" = "Søg på hele Mac'en";
+"LEFT" = "VENSTRE";
+"RIGHT" = "HØJRE";

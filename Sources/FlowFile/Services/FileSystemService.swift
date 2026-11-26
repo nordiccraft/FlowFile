@@ -9,11 +9,19 @@ enum FileSystemError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .emptyName:
-            return "Navnet kan ikke være tomt."
+            return tr("Navnet kan ikke være tomt.", "The name cannot be empty.")
         case .targetAlreadyExists(let name):
-            return "«\(name)» finnes allerede i denne mappen."
+            return LocalizationCenter.shared.trFormat(
+                "«%@» finnes allerede i denne mappen.",
+                "“%@” already exists in this folder.",
+                name
+            )
         case .directoryNotAccessible(let path):
-            return "Ingen tilgang til mappen: \(path)"
+            return LocalizationCenter.shared.trFormat(
+                "Ingen tilgang til mappen: %@",
+                "No access to folder: %@",
+                path
+            )
         }
     }
 }
@@ -318,11 +326,18 @@ enum FileSystemService {
         return moved
     }
 
-    static func trashItems(_ urls: [URL]) throws {
+    @discardableResult
+    static func trashItems(_ urls: [URL]) throws -> [(original: URL, trashed: URL)] {
         let fm = FileManager.default
+        var results: [(original: URL, trashed: URL)] = []
         for url in urls {
-            try fm.trashItem(at: url, resultingItemURL: nil)
+            var resultingNSURL: NSURL?
+            try fm.trashItem(at: url, resultingItemURL: &resultingNSURL)
+            if let trashed = resultingNSURL as URL? {
+                results.append((original: url.standardizedFileURL, trashed: trashed.standardizedFileURL))
+            }
         }
+        return results
     }
 
     static func permanentlyDeleteItems(_ urls: [URL]) throws {

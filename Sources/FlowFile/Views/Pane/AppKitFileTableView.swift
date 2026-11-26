@@ -119,6 +119,8 @@ struct AppKitFileTableView: NSViewRepresentable {
         let newGitBadges = tab.gitBadges
         let newDiffStatuses = tab.diffStatuses
         let cutSet: Set<URL> = workspace.activeCutURLs
+        let currentLang = LocalizationCenter.shared.currentLanguage
+        let l10nRev = LocalizationCenter.shared.revision
 
         let needsReload = coordinator.items != newItems
             || coordinator.lastMarked != newMarked
@@ -127,6 +129,8 @@ struct AppKitFileTableView: NSViewRepresentable {
             || coordinator.lastDiffStatuses != newDiffStatuses
             || coordinator.lastCutSet != cutSet
             || coordinator.lastFlatBranchView != tab.isFlatBranchView
+            || coordinator.lastLanguage != currentLang
+            || coordinator.lastL10nRevision != l10nRev
 
         coordinator.items = newItems
         coordinator.lastMarked = newMarked
@@ -135,6 +139,8 @@ struct AppKitFileTableView: NSViewRepresentable {
         coordinator.lastDiffStatuses = newDiffStatuses
         coordinator.lastCutSet = cutSet
         coordinator.lastFlatBranchView = tab.isFlatBranchView
+        coordinator.lastLanguage = currentLang
+        coordinator.lastL10nRevision = l10nRev
 
         guard let tableView = coordinator.tableView else { return }
 
@@ -178,6 +184,8 @@ struct AppKitFileTableView: NSViewRepresentable {
         var lastDiffStatuses: [URL: FileDiffStatus] = [:]
         var lastCutSet: Set<URL> = []
         var lastFlatBranchView: Bool = false
+        var lastLanguage: AppLanguage = LocalizationCenter.shared.currentLanguage
+        var lastL10nRevision: Int = LocalizationCenter.shared.revision
         var lastActivePaneID: PaneID? = nil
         var lastScrollGeneration: Int = 0
         var isSyncingSelection: Bool = false
@@ -327,8 +335,8 @@ struct AppKitFileTableView: NSViewRepresentable {
             workspace.transferQueue.enqueue(operation: op, urls: urls, to: targetDirectory)
             workspace.showStatus(
                 op == .copy
-                    ? "Kopierer \(urls.count) element(er) til \(targetDirectory.lastPathComponent)..."
-                    : "Flytter \(urls.count) element(er) til \(targetDirectory.lastPathComponent)..."
+                    ? tr("Kopierer \(urls.count) element(er) til \(targetDirectory.lastPathComponent)...", "Copying \(urls.count) item(s) to \(targetDirectory.lastPathComponent)...")
+                    : tr("Flytter \(urls.count) element(er) til \(targetDirectory.lastPathComponent)...", "Moving \(urls.count) item(s) to \(targetDirectory.lastPathComponent)...")
             )
             return true
         }
@@ -559,31 +567,33 @@ struct AppKitFileTableView: NSViewRepresentable {
             let clickedItem: FileItem? = (clickedRow >= 0 && clickedRow < items.count) ? items[clickedRow] : nil
 
             if let item = clickedItem {
-                addItem(to: menu, title: "Åpne", action: #selector(ctxOpen))
+                addItem(to: menu, title: tr("Åpne", "Open"), action: #selector(ctxOpen))
                 if item.isNavigableFolder {
-                    addItem(to: menu, title: "Åpne i ny fane", action: #selector(ctxOpenInNewTab))
+                    addItem(to: menu, title: tr("Åpne i ny fane", "Open in New Tab"), action: #selector(ctxOpenInNewTab))
                     if workspace.isDualPane {
-                        addItem(to: menu, title: "Åpne i motsatt panel", action: #selector(ctxOpenInOppositePane))
+                        addItem(to: menu, title: tr("Åpne i motsatt panel", "Open in Opposite Pane"), action: #selector(ctxOpenInOppositePane))
                     }
-                    let pinTitle = workspace.isPinned(item.navigationTargetURL) ? "Fjern fra Hurtigtilgang" : "Fest til Hurtigtilgang"
+                    let pinTitle = workspace.isPinned(item.navigationTargetURL)
+                        ? tr("Fjern fra Hurtigtilgang", "Remove from Quick Access")
+                        : tr("Fest til Hurtigtilgang", "Pin to Quick Access")
                     addItem(to: menu, title: pinTitle, action: #selector(ctxTogglePin))
                 } else if item.isPackage {
-                    addItem(to: menu, title: "Vis pakkeinnhold som mappe", action: #selector(ctxEnterPackage))
+                    addItem(to: menu, title: tr("Vis pakkeinnhold som mappe", "Show Package Contents as Folder"), action: #selector(ctxEnterPackage))
                 }
 
                 if item.isShortcut {
-                    addItem(to: menu, title: "Gå til originalens plassering i FlowFile", action: #selector(ctxRevealShortcutOriginal))
+                    addItem(to: menu, title: tr("Gå til originalens plassering i FlowFile", "Go to Original Location in FlowFile"), action: #selector(ctxRevealShortcutOriginal))
                 }
                 if tab.isFlatBranchView, item.relativeSubpath != nil {
                     addItem(to: menu, title: tr("Gå til filens undermappe", "Open File's Subfolder"), action: #selector(ctxRevealInSubfolder))
                 }
 
                 if !tab.isInsideArchive {
-                    addItem(to: menu, title: "Del... (⇧⌘S)", action: #selector(ctxShare))
+                    addItem(to: menu, title: tr("Del... (⇧⌘S)", "Share... (⇧⌘S)"), action: #selector(ctxShare))
                 }
 
-                addItem(to: menu, title: "Quick Look (Space)", action: #selector(ctxQuickLook))
-                addItem(to: menu, title: "Åpne i tekstredigerer (F4)", action: #selector(ctxOpenEditor))
+                addItem(to: menu, title: tr("Quick Look (Space)", "Quick Look (Space)"), action: #selector(ctxQuickLook))
+                addItem(to: menu, title: tr("Åpne i tekstredigerer (F4)", "Open in Text Editor (F4)"), action: #selector(ctxOpenEditor))
                 menu.addItem(.separator())
 
                 if item.cloudState != .none {
@@ -592,29 +602,29 @@ struct AppKitFileTableView: NSViewRepresentable {
                     menu.addItem(.separator())
                 }
 
-                addItem(to: menu, title: "Marker / Beregn mappestørrelse (Shift+Space)", action: #selector(ctxMarkAndSize))
+                addItem(to: menu, title: tr("Marker / Beregn mappestørrelse (Shift+Space)", "Mark / Calculate Folder Size (Shift+Space)"), action: #selector(ctxMarkAndSize))
                 if !tab.isInsideArchive {
-                    addItem(to: menu, title: "Legg i Drop-hylle (⇧⌘D)", action: #selector(ctxAddToDropShelf))
-                    addItem(to: menu, title: "Klipp ut (Cmd+X)", action: #selector(ctxCut))
+                    addItem(to: menu, title: tr("Legg i Drop-hylle (⇧⌘D)", "Add to Drop Shelf (⇧⌘D)"), action: #selector(ctxAddToDropShelf))
+                    addItem(to: menu, title: tr("Klipp ut (Cmd+X)", "Cut (Cmd+X)"), action: #selector(ctxCut))
                 }
-                addItem(to: menu, title: "Kopier (Cmd+C)", action: #selector(ctxCopy))
-                addItem(to: menu, title: "Kopier full sti", action: #selector(ctxCopyPath))
+                addItem(to: menu, title: tr("Kopier (Cmd+C)", "Copy (Cmd+C)"), action: #selector(ctxCopy))
+                addItem(to: menu, title: tr("Kopier full sti", "Copy Full Path"), action: #selector(ctxCopyPath))
 
                 if workspace.isDualPane {
                     menu.addItem(.separator())
-                    addItem(to: menu, title: "Kopier til motsatt panel (F5)", action: #selector(ctxCopyOpposite))
+                    addItem(to: menu, title: tr("Kopier til motsatt panel (F5)", "Copy to Opposite Pane (F5)"), action: #selector(ctxCopyOpposite))
                     if !tab.isInsideArchive {
-                        addItem(to: menu, title: "Flytt til motsatt panel (F6)", action: #selector(ctxMoveOpposite))
-                        addItem(to: menu, title: "Lag snarvei i motsatt panel", action: #selector(ctxCreateShortcutOpposite))
+                        addItem(to: menu, title: tr("Flytt til motsatt panel (F6)", "Move to Opposite Pane (F6)"), action: #selector(ctxMoveOpposite))
+                        addItem(to: menu, title: tr("Lag snarvei i motsatt panel", "Create Shortcut in Opposite Pane"), action: #selector(ctxCreateShortcutOpposite))
                     }
                 }
 
                 if ArchiveService.isSupportedArchive(item.url) && !tab.isInsideArchive {
                     menu.addItem(.separator())
-                    addItem(to: menu, title: "Pakk ut hele arkivet her", action: #selector(ctxExtractArchive))
+                    addItem(to: menu, title: tr("Pakk ut hele arkivet her", "Extract Entire Archive Here"), action: #selector(ctxExtractArchive))
                 } else if !tab.isInsideArchive {
                     menu.addItem(.separator())
-                    addItem(to: menu, title: "Komprimer valgte til .zip", action: #selector(ctxCompressZip))
+                    addItem(to: menu, title: tr("Komprimer valgte til .zip", "Compress Selected to .zip"), action: #selector(ctxCompressZip))
                 }
 
                 if !tab.isInsideArchive {
@@ -662,30 +672,30 @@ struct AppKitFileTableView: NSViewRepresentable {
 
                 if !tab.isInsideArchive {
                     menu.addItem(.separator())
-                    addItem(to: menu, title: "Gi nytt navn... (F2)", action: #selector(ctxRename))
+                    addItem(to: menu, title: tr("Gi nytt navn... (F2)", "Rename... (F2)"), action: #selector(ctxRename))
                     addItem(to: menu, title: tr("Masse-omdøping... (Cmd+M)", "Batch Rename... (Cmd+M)"), action: #selector(ctxMultiRename))
-                    addItem(to: menu, title: "Flytt til Papirkurv (Delete)", action: #selector(ctxTrash))
-                    addItem(to: menu, title: "Slett permanent... (Shift+Delete)", action: #selector(ctxPermDelete))
+                    addItem(to: menu, title: tr("Flytt til Papirkurv (Delete)", "Move to Trash (Delete)"), action: #selector(ctxTrash))
+                    addItem(to: menu, title: tr("Slett permanent... (Shift+Delete)", "Delete Permanently... (Shift+Delete)"), action: #selector(ctxPermDelete))
                 }
                 menu.addItem(.separator())
             }
 
             if tab.isInsideArchive {
-                addItem(to: menu, title: "Pakk ut hele arkivet til mappe", action: #selector(ctxExtractArchive))
-                addItem(to: menu, title: "Gå ut av arkiv (Backspace)", action: #selector(ctxExitArchive))
+                addItem(to: menu, title: tr("Pakk ut hele arkivet til mappe", "Extract Entire Archive to Folder"), action: #selector(ctxExtractArchive))
+                addItem(to: menu, title: tr("Gå ut av arkiv (Backspace)", "Exit Archive (Backspace)"), action: #selector(ctxExitArchive))
             } else {
-                addItem(to: menu, title: "Lim inn her (Cmd+V)", action: #selector(ctxPaste))
-                addItem(to: menu, title: "Ny mappe... (F7)", action: #selector(ctxNewFolder))
-                addItem(to: menu, title: "Ny tom fil...", action: #selector(ctxNewFile))
+                addItem(to: menu, title: tr("Lim inn her (Cmd+V)", "Paste Here (Cmd+V)"), action: #selector(ctxPaste))
+                addItem(to: menu, title: tr("Ny mappe... (F7)", "New Folder... (F7)"), action: #selector(ctxNewFolder))
+                addItem(to: menu, title: tr("Ny tom fil...", "New Empty File..."), action: #selector(ctxNewFile))
                 menu.addItem(.separator())
                 addItem(to: menu, title: tr("Dypsøk i denne mappen... (⇧⌘F)", "Deep Search Here... (⇧⌘F)"), action: #selector(ctxDeepSearch))
                 addItem(to: menu, title: tr("Analyser diskbruk her...", "Analyze Disk Space Here..."), action: #selector(ctxDiskSpace))
                 addItem(to: menu, title: tr("Finn duplikatfiler her...", "Find Duplicate Files Here..."), action: #selector(ctxDuplicates))
             }
             menu.addItem(.separator())
-            addItem(to: menu, title: "Vis/skjul innebygd Terminal-skuff (Ctrl+`)", action: #selector(ctxToggleEmbeddedTerminal))
-            addItem(to: menu, title: "Åpne i macOS Terminal", action: #selector(ctxOpenTerminal))
-            addItem(to: menu, title: "Vis i macOS Finder", action: #selector(ctxRevealInFinder))
+            addItem(to: menu, title: tr("Vis/skjul innebygd Terminal-skuff (Ctrl+`)", "Show/Hide Embedded Terminal Drawer (Ctrl+`)"), action: #selector(ctxToggleEmbeddedTerminal))
+            addItem(to: menu, title: tr("Åpne i macOS Terminal", "Open in macOS Terminal"), action: #selector(ctxOpenTerminal))
+            addItem(to: menu, title: tr("Vis i macOS Finder", "Reveal in macOS Finder"), action: #selector(ctxRevealInFinder))
 
             return menu
         }
@@ -929,15 +939,15 @@ struct AppKitFileTableView: NSViewRepresentable {
                     switch item.cloudState {
                     case .cloudOnly:
                         let cfg = baseCfg.applying(NSImage.SymbolConfiguration(paletteColors: [.systemBlue]))
-                        cell.imageView?.image = NSImage(systemSymbolName: "icloud.and.arrow.down", accessibilityDescription: "Kun i skyen")?
+                        cell.imageView?.image = NSImage(systemSymbolName: "icloud.and.arrow.down", accessibilityDescription: tr("Kun i skyen", "Cloud only"))?
                             .withSymbolConfiguration(cfg)
                     case .localSynced:
                         let cfg = baseCfg.applying(NSImage.SymbolConfiguration(paletteColors: [.systemGreen]))
-                        cell.imageView?.image = NSImage(systemSymbolName: "checkmark.circle", accessibilityDescription: "Lagret lokalt")?
+                        cell.imageView?.image = NSImage(systemSymbolName: "checkmark.circle", accessibilityDescription: tr("Lagret lokalt", "Stored locally"))?
                             .withSymbolConfiguration(cfg)
                     case .syncing:
                         let cfg = baseCfg.applying(NSImage.SymbolConfiguration(paletteColors: [.systemBlue]))
-                        cell.imageView?.image = NSImage(systemSymbolName: "arrow.triangle.2.circlepath.circle", accessibilityDescription: "Synkroniserer")?
+                        cell.imageView?.image = NSImage(systemSymbolName: "arrow.triangle.2.circlepath.circle", accessibilityDescription: tr("Synkroniserer", "Syncing"))?
                             .withSymbolConfiguration(cfg)
                     case .none:
                         break
@@ -950,7 +960,7 @@ struct AppKitFileTableView: NSViewRepresentable {
 
                 if let diff = tab.diffStatuses[item.url] {
                     parts.append(diff.badgeText)
-                    tooltips.append("Mappe-sammenligning: \(diff.badgeText)")
+                    tooltips.append("\(tr("Mappe-sammenligning", "Folder Comparison")): \(diff.badgeText)")
                     switch diff {
                     case .onlyHere: badgeColor = .systemGreen
                     case .newerHere: badgeColor = .systemBlue
@@ -964,12 +974,12 @@ struct AppKitFileTableView: NSViewRepresentable {
                     parts.append("Git:\(git.rawValue)")
                     let gitDesc: String = {
                         switch git {
-                        case .modified: return "Git: Endret (Modified)"
-                        case .staged: return "Git: Klargjort (Staged)"
-                        case .untracked: return "Git: Ny fil (Untracked)"
-                        case .deleted: return "Git: Slettet"
-                        case .conflict: return "Git: Konflikt!"
-                        case .ignored: return "Git: Ignorert"
+                        case .modified: return tr("Git: Endret (Modified)", "Git: Modified")
+                        case .staged: return tr("Git: Klargjort (Staged)", "Git: Staged")
+                        case .untracked: return tr("Git: Ny fil (Untracked)", "Git: Untracked")
+                        case .deleted: return tr("Git: Slettet", "Git: Deleted")
+                        case .conflict: return tr("Git: Konflikt!", "Git: Conflict!")
+                        case .ignored: return tr("Git: Ignorert", "Git: Ignored")
                         }
                     }()
                     tooltips.append(gitDesc)

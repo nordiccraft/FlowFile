@@ -34,6 +34,13 @@ mkdir -p "$MACOS_DIR" "$RESOURCES_DIR" "$RESOURCES_DIR/nb.lproj" "$RESOURCES_DIR
 cp "$BIN_PATH" "$MACOS_DIR/$APP_NAME"
 chmod 755 "$MACOS_DIR/$APP_NAME"
 
+# Copy SwiftPM resource bundle (if present) so Bundle.module works inside the .app bundle
+BIN_DIR="${BIN_PATH:h}"
+RESOURCE_BUNDLE="$BIN_DIR/${APP_NAME}_${APP_NAME}.bundle"
+if [[ -d "$RESOURCE_BUNDLE" ]]; then
+    ditto "$RESOURCE_BUNDLE" "$RESOURCES_DIR/${APP_NAME}_${APP_NAME}.bundle"
+fi
+
 if [[ -f "$PROJECT_DIR/scripts/generate-icon.swift" ]]; then
     swift -module-cache-path /tmp/swift-module-cache "$PROJECT_DIR/scripts/generate-icon.swift" "$RESOURCES_DIR/AppIcon.icns" "$RESOURCES_DIR/flowfile-appicon.png"
 fi
@@ -147,7 +154,8 @@ if [[ "$SIGN_IDENTITY" == "-" ]]; then
     # and borrow FlowFile's privacy permissions (e.g. Full Disk Access).
     codesign --force --deep --options runtime --entitlements "$ENTITLEMENTS_FILE" --sign - "$BUNDLE_DIR"
 else
-    codesign --force --deep --options runtime --entitlements "$ENTITLEMENTS_FILE" --sign "$SIGN_IDENTITY" "$BUNDLE_DIR"
+    # Developer ID builds require --timestamp + Hardened Runtime for Apple Notarization.
+    codesign --force --deep --options runtime --timestamp --entitlements "$ENTITLEMENTS_FILE" --sign "$SIGN_IDENTITY" "$BUNDLE_DIR"
 fi
 
 codesign --verify --deep --strict "$BUNDLE_DIR"

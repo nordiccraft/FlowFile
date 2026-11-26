@@ -1,0 +1,267 @@
+/* FlowFile — Deutsch */
+
+/* Language */
+"Automatic (follow macOS)" = "Automatisch (macOS folgen)";
+
+/* Menus — File */
+"New Tab" = "Neuer Tab";
+"Close Active Tab" = "Aktiven Tab schließen";
+"New Folder..." = "Neuer Ordner...";
+"New Empty File..." = "Neue leere Datei...";
+"Smart Share Hub (Share Selected)..." = "Smart-Freigabezentrum (Auswahl teilen)...";
+
+/* Menus — Edit */
+"Undo File Operation" = "Dateivorgang widerrufen";
+"Cut" = "Ausschneiden";
+"Copy" = "Kopieren";
+"Paste" = "Einsetzen";
+"Select All" = "Alles auswählen";
+"Copy Full Path" = "Vollständigen Pfad kopieren";
+"Rename..." = "Umbenennen...";
+"Instant Filter in Active Folder" = "Schnellfilter im aktiven Ordner";
+"Deep Subfolder & Content Search..." = "Tiefensuche in Unterordnern & Inhalten...";
+
+/* Menus — View */
+"View" = "Darstellung";
+"Switch to Single Pane" = "Zur Einzelansicht wechseln";
+"Switch to Dual-Pane" = "Zur Zweispalt-Ansicht wechseln";
+"Exit Flat Subfolder View" = "Flache Unterordner-Ansicht beenden";
+"Flat Subfolder View" = "Flache Ansicht (alle Dateien aus Unterordnern)";
+"Hide Left Sidebar" = "Linke Seitenleiste ausblenden";
+"Show Left Sidebar" = "Linke Seitenleiste einblenden";
+"Hide Right Inspector" = "Rechten Inspektor ausblenden";
+"Show Right Inspector" = "Rechten Inspektor einblenden";
+"Hide Hidden Dotfiles" = "Versteckte Dateien ausblenden";
+"Show Hidden Dotfiles" = "Versteckte Dateien einblenden";
+"Detailed List View" = "Detaillierte Listenansicht";
+"Grid View (Thumbnails)" = "Rasteransicht (Vorschaubilder)";
+"Refresh" = "Aktualisieren";
+
+/* Menus — Go */
+"Go" = "Gehe zu";
+"Command Palette..." = "Befehlspalette...";
+"Edit Address Bar" = "Adressleiste bearbeiten";
+"Back" = "Zurück";
+"Forward" = "Vorwärts";
+"Up One Folder Level" = "Eine Ordnerebene nach oben";
+"Home" = "Benutzerordner";
+"Desktop" = "Schreibtisch";
+"Downloads" = "Downloads";
+"Documents" = "Dokumente";
+"Applications" = "Programme";
+
+/* Menus — Tools & App */
+"Tools" = "Werkzeuge";
+"Disk Space Analyzer..." = "Speicherplatz-Analyse...";
+"Find Duplicate Files (SHA-256)..." = "Doppelte Dateien finden (SHA-256)...";
+"Save Current Workspace..." = "Aktuellen Arbeitsbereich speichern...";
+"Open Saved Workspace" = "Gespeicherten Arbeitsbereich öffnen";
+"Batch Rename..." = "Mehrfach-Umbenennen...";
+"Undo Last Batch Rename" = "Letztes Mehrfach-Umbenennen widerrufen";
+"Hide Drop Shelf & Queue" = "Ablage & Warteschlange ausblenden";
+"Show Drop Shelf & Queue" = "Ablage & Warteschlange einblenden";
+"Add Selected to Drop Shelf" = "Auswahl zur Ablage hinzufügen";
+"Exit Folder Comparison" = "Ordnervergleich beenden";
+"Compare Folders in Dual-Pane" = "Ordner in Zweispalt-Ansicht vergleichen";
+"Synchronize Folders..." = "Ordner synchronisieren...";
+"Convert / Resize Selected Images..." = "Ausgewählte Bilder konvertieren / skalieren...";
+"Merge Selected into Single PDF" = "Auswahl zu einer PDF zusammenführen";
+"Compress Selected to .zip" = "Auswahl als .zip komprimieren";
+"Extract Selected Archive Here" = "Ausgewähltes Archiv hier entpacken";
+"Switch Active Pane" = "Aktives Panel wechseln";
+"Copy to Opposite Pane (F5)" = "Ins gegenüberliegende Panel kopieren (F5)";
+"Move to Opposite Pane (F6)" = "Ins gegenüberliegende Panel verschieben (F6)";
+"Hide Embedded Terminal Drawer" = "Integriertes Terminal ausblenden";
+"Show Embedded Terminal Drawer" = "Integriertes Terminal einblenden";
+"Open macOS Terminal in Active Folder" = "macOS Terminal im aktiven Ordner öffnen";
+"Check for Updates..." = "Nach Updates suchen...";
+"Settings..." = "Einstellungen...";
+"Start Interactive Walkthrough (Practice Mode)..." = "Interaktive Einführung starten (Übungsmodus)...";
+
+/* Toolbar & Navigation */
+"New" = "Neu";
+"New Folder (F7)" = "Neuer Ordner (F7)";
+"New Empty File" = "Neue leere Datei";
+"New Tab (Cmd+T)" = "Neuer Tab (Cmd+T)";
+"Rename" = "Umbenennen";
+"Share" = "Teilen";
+"Delete" = "Löschen";
+"Exit Diff" = "Vergleich beenden";
+"Go to" = "Gehe zu";
+"1-Pane" = "1-Panel";
+"Copy Path" = "Pfad kopieren";
+"Copied!" = "Kopiert!";
+"Copied" = "Kopiert";
+"Edit" = "Bearbeiten";
+"Copy →" = "Kopieren →";
+"Move →" = "Verschieben →";
+"Copy (2-pane)" = "Kopieren (2-Panel)";
+"Move (2-pane)" = "Verschieben (2-Panel)";
+"New Folder" = "Neuer Ordner";
+"Trash" = "Papierkorb";
+
+/* Sidebar */
+"Quick Access" = "Schnellzugriff";
+"Workspaces" = "Arbeitsbereiche";
+"Save current layout..." = "Aktuelles Layout speichern...";
+"Open Workspace" = "Arbeitsbereich öffnen";
+"Delete Workspace" = "Arbeitsbereich löschen";
+"Color Tags" = "Farb-Tags";
+"Cloud Storage" = "Cloud-Speicher";
+"This Mac" = "Dieser Mac";
+"Folder Tree" = "Ordnerbaum";
+
+/* Table Columns, Context Menu & File Items */
+"Name" = "Name";
+"Status" = "Status";
+"Ext" = "Endung";
+"Size" = "Größe";
+"Modified" = "Geändert";
+"Kind" = "Art";
+"Details" = "Details";
+"Grid" = "Raster";
+"Open" = "Öffnen";
+"Open in New Tab" = "In neuem Tab öffnen";
+"Open in Opposite Pane" = "Im gegenüberliegenden Panel öffnen";
+"Remove from Quick Access" = "Aus Schnellzugriff entfernen";
+"Pin to Quick Access" = "An Schnellzugriff anheften";
+"Show Package Contents as Folder" = "Paketinhalt als Ordner anzeigen";
+"Go to Original Location in FlowFile" = "Zum Original in FlowFile gehen";
+"Open File's Subfolder" = "Unterordner der Datei öffnen";
+"Share... (⇧⌘S)" = "Teilen... (⇧⌘S)";
+"Quick Look (Space)" = "Übersicht (Leertaste)";
+"Open in Text Editor (F4)" = "Im Texteditor öffnen (F4)";
+"Keep on This Mac (Download now)" = "Auf diesem Mac behalten (Jetzt laden)";
+"Free Up Local Space (Online-only)" = "Lokalen Speicher freigeben (Nur online)";
+"Mark / Calculate Folder Size (Shift+Space)" = "Markieren / Ordnergröße berechnen (Shift+Leertaste)";
+"Add to Drop Shelf (⇧⌘D)" = "Zur Ablage hinzufügen (⇧⌘D)";
+"Cut (Cmd+X)" = "Ausschneiden (Cmd+X)";
+"Copy (Cmd+C)" = "Kopieren (Cmd+C)";
+"Create Shortcut in Opposite Pane" = "Verknüpfung im gegenüberliegenden Panel erstellen";
+"Extract Entire Archive Here" = "Gesamtes Archiv hier entpacken";
+"Convert / Resize Image(s)..." = "Bild(er) konvertieren / skalieren...";
+"Merge into Single PDF" = "Zu einer PDF zusammenführen";
+"Clear Color Tags (⌃0)" = "Farb-Tags entfernen (⌃0)";
+"Rename... (F2)" = "Umbenennen... (F2)";
+"Batch Rename... (Cmd+M)" = "Mehrfach-Umbenennen... (Cmd+M)";
+"Move to Trash (Delete)" = "In den Papierkorb legen (Delete)";
+"Delete Permanently... (Shift+Delete)" = "Endgültig löschen... (Shift+Delete)";
+"Extract Entire Archive to Folder" = "Gesamtes Archiv in Ordner entpacken";
+"Exit Archive (Backspace)" = "Archiv verlassen (Backspace)";
+"Paste Here (Cmd+V)" = "Hier einsetzen (Cmd+V)";
+"New Folder... (F7)" = "Neuer Ordner... (F7)";
+"Deep Search Here... (⇧⌘F)" = "Hier tiefensuchen... (⇧⌘F)";
+"Analyze Disk Space Here..." = "Speicherplatz hier analysieren...";
+"Find Duplicate Files Here..." = "Doppelte Dateien hier finden...";
+"Show/Hide Embedded Terminal Drawer (Ctrl+`)" = "Integriertes Terminal ein-/ausblenden (Ctrl+`)";
+"Open in macOS Terminal" = "In macOS Terminal öffnen";
+"Reveal in macOS Finder" = "Im macOS Finder anzeigen";
+"Cloud only" = "Nur in der Cloud";
+"Stored locally" = "Lokal gespeichert";
+"Syncing" = "Synchronisiert";
+"Folder Comparison" = "Ordnervergleich";
+"Git: Modified" = "Git: Geändert";
+"Git: Staged" = "Git: Vorgemerkt";
+"Git: Untracked" = "Git: Unverfolgt";
+"Git: Deleted" = "Git: Gelöscht";
+"Git: Conflict!" = "Git: Konflikt!";
+"Git: Ignored" = "Git: Ignoriert";
+"Archive Folder" = "Archivordner";
+"Archive File" = "Archivdatei";
+"archive file" = "Archivdatei";
+"Shortcut" = "Verknüpfung";
+"Folder" = "Ordner";
+"File" = "Datei";
+"file" = "Datei";
+"<SHORTCUT>" = "<VERKNÜPFUNG>";
+"<FOLDER>" = "<ORDNER>";
+
+/* Color Tag Names */
+"Red" = "Rot";
+"Orange" = "Orange";
+"Yellow" = "Gelb";
+"Green" = "Grün";
+"Blue" = "Blau";
+"Purple" = "Lila";
+"Gray" = "Grau";
+
+/* Settings & Dialogs */
+"FlowFile – Settings" = "FlowFile – Einstellungen";
+"Done" = "Fertig";
+"Language & User Guide" = "Sprache & Benutzerhandbuch";
+"Language:" = "Sprache:";
+"Launch Interactive Tour" = "Interaktive Tour starten";
+"Direct Cloud Sharing (OneDrive & Google Drive OAuth)" = "Direkte Cloud-Freigabe (OneDrive & Google Drive OAuth)";
+"Sign Out" = "Abmelden";
+"Sign In with Microsoft" = "Mit Microsoft anmelden";
+"Sign In with Google" = "Mit Google anmelden";
+"Signed out of Microsoft OneDrive" = "Von Microsoft OneDrive abgemeldet";
+"Signed out of Google Drive" = "Von Google Drive abgemeldet";
+"Signed in to Microsoft OneDrive!" = "Bei Microsoft OneDrive angemeldet!";
+"Signed in to Google Drive!" = "Bei Google Drive angemeldet!";
+"Azure App Client ID (optional for direct links)" = "Azure App Client ID (optional für Direktlinks)";
+"Google OAuth Desktop Client ID" = "Google OAuth Desktop Client ID";
+"macOS Permissions" = "macOS-Berechtigungen";
+"FlowFile was updated and macOS reset permissions. Toggle Full Disk Access off and on in System Settings to restore." = "FlowFile wurde aktualisiert und macOS hat Berechtigungen zurückgesetzt. Deaktivieren und aktivieren Sie Festplattenvollzugriff in den Systemeinstellungen.";
+"Full Disk Access: Enabled" = "Festplattenvollzugriff: Aktiviert";
+"Full Disk Access: Not enabled" = "Festplattenvollzugriff: Nicht aktiviert";
+"Full Disk Access" = "Festplattenvollzugriff";
+"Files & Folders" = "Dateien und Ordner";
+"Local Network" = "Lokales Netzwerk";
+"Automation" = "Automation";
+"Default File Browser in macOS" = "Standard-Dateimanager in macOS";
+"Current default: FlowFile" = "Aktueller Standard: FlowFile";
+"Current default: macOS Finder" = "Aktueller Standard: macOS Finder";
+"Re-apply FlowFile" = "Registrierung erneuern";
+"Set FlowFile as Default" = "FlowFile als Standard festlegen";
+"Restore Finder" = "Finder wiederherstellen";
+"Open external folders in:" = "Externe Ordner öffnen in:";
+"Keyboard & Quick Actions" = "Tastatur & Schnellaktionen";
+"Use Space for quick-mark + folder size (and Shift+Space / F3 for Quick Look)" = "Leertaste für Schnellmarkierung + Ordnergröße nutzen (und Shift+Leertaste / F3 für Übersicht)";
+"Always show bottom F3–F8 action bar (even in single-pane view)" = "Untere F3–F8-Aktionsleiste immer anzeigen (auch in der Einzelansicht)";
+"Sidebar & File View" = "Seitenleiste & Dateiansicht";
+"Auto-collapse left sidebar when switching to Dual-Pane (Cmd+D)" = "Linke Seitenleiste beim Wechsel zur Zweispalt-Ansicht automatisch ausblenden (Cmd+D)";
+"Show hidden dotfiles (.dotfiles)" = "Versteckte Punktdateien (.dotfiles) anzeigen";
+
+/* Prompt Dialogs & Errors */
+"Create New Folder" = "Neuen Ordner erstellen";
+"Create New Empty File" = "Neue leere Datei erstellen";
+"Rename (F2)" = "Umbenennen (F2)";
+"Delete Permanently?" = "Endgültig löschen?";
+"Folder name" = "Ordnername";
+"File name (e.g. note.md)" = "Dateiname (z. B. notiz.md)";
+"Current name" = "Aktueller Name";
+"New name" = "Neuer Name";
+"In" = "In";
+"more" = "weitere";
+"Cancel" = "Abbrechen";
+"Create" = "Erstellen";
+"Save Name" = "Namen speichern";
+"Delete Permanently" = "Endgültig löschen";
+"The name cannot be empty." = "Der Name darf nicht leer sein.";
+"The name cannot contain “/” or “:”." = "Der Name darf kein „/“ oder „:“ enthalten.";
+"“%@” already exists in this folder." = "„%@“ existiert bereits in diesem Ordner.";
+"No access to folder: %@" = "Kein Zugriff auf Ordner: %@";
+"Action Could Not Be Completed" = "Aktion konnte nicht ausgeführt werden";
+
+/* Command Palette */
+"Jump to folder or run command..." = "Zu Ordner springen oder Befehl ausführen...";
+"Recent Folder" = "Zuletzt verwendet";
+"Subfolder" = "Unterordner";
+"Open FlowFile Settings" = "FlowFile-Einstellungen öffnen";
+"Language, cloud sharing, permissions, keyboard & sidebar" = "Sprache, Cloud-Freigabe, Berechtigungen, Tastatur & Seitenleiste";
+"Smart Share Hub – Share Selected Files/Folders" = "Smart-Freigabezentrum – Ausgewählte Dateien/Ordner teilen";
+"Multi-Rename Tool – Batch Rename" = "Multi-Rename Tool – Mehrfach-Umbenennen";
+"Compare Left & Right Folders (Dual-Pane Diff)" = "Linken & rechten Ordner vergleichen (Dual-Pane Diff)";
+"Create New Folder in Active Pane" = "Neuen Ordner im aktiven Panel erstellen";
+"Open Terminal in Active Folder" = "Terminal im aktiven Ordner öffnen";
+"Copy Full Path to Clipboard" = "Vollständigen Pfad in die Zwischenablage kopieren";
+"Folder Comparison Active" = "Ordnervergleich aktiv";
+"Hide identical" = "Identische ausblenden";
+"Synchronize..." = "Synchronisieren...";
+"Exit Comparison" = "Vergleich beenden";
+"Exit Flat View" = "Flache Ansicht beenden";
+"Show All" = "Alle anzeigen";
+"Search Entire Mac" = "Gesamten Mac durchsuchen";
+"LEFT" = "LINKS";
+"RIGHT" = "RECHTS";

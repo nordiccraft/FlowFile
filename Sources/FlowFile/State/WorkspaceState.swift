@@ -17,6 +17,12 @@ enum ClipboardOperation {
     case cut
 }
 
+enum UndoRecord {
+    case trashedItems([(original: URL, trashed: URL)])
+    case renamedItem(original: URL, renamed: URL)
+    case movedItems([(original: URL, moved: URL)])
+}
+
 enum ActivePrompt: Identifiable {
     case newFolder(inDirectory: URL)
     case newFile(inDirectory: URL)
@@ -143,6 +149,7 @@ final class WorkspaceState {
     let updateService = UpdateService()
     var isUpdateSheetVisible: Bool = false
     var hasFullDiskAccess: Bool = false
+    var showPostUpdatePermissionsAlert: Bool = false
     var isDefaultFileBrowser: Bool = false
     var isUpdatingDefaultBrowser: Bool = false
     var externalOpenTabBehavior: ExternalOpenTabBehavior {
@@ -210,7 +217,11 @@ final class WorkspaceState {
     var addressBarFocusTrigger: Int = 0
 
     var statusBanner: String? = nil
+    private var statusBannerGeneration: Int = 0
     var alertErrorMessage: String? = nil
+
+    var undoStack: [UndoRecord] = []
+    var canUndoFileOperation: Bool { !undoStack.isEmpty }
 
     var activePane: PaneState {
         activePaneID == .left ? leftPane : rightPane
@@ -242,6 +253,9 @@ final class WorkspaceState {
         self.appLanguage = resolvedLang
         self.externalOpenTabBehavior = resolvedExtTab
         self.hasFullDiskAccess = PermissionsService.hasFullDiskAccess()
+        self.showPostUpdatePermissionsAlert = PermissionsService.detectPostUpdatePermissionReset(
+            currentVersion: self.updateService.currentAppVersion
+        )
         self.isDefaultFileBrowser = DefaultFileBrowserService.isFlowFileDefault()
 
         let homeURL = FileManager.default.homeDirectoryForCurrentUser
@@ -291,13 +305,23 @@ final class WorkspaceState {
 
         transferQueue.onJobFinished = { [weak self] createdURLs, destDir in
             guard let self else { return }
+            if let latestJob = self.transferQueue.jobs.first(where: { $0.destinationDirectory.standardizedFileURL == destDir.standardizedFileURL && $0.createdDestinations == createdURLs }),
+               latestJob.operation == .move,
+               latestJob.sourceURLs.count == createdURLs.count {
+                let pairs = zip(latestJob.sourceURLs, createdURLs).compactMap { orig, moved -> (original: URL, moved: URL)? in
+                    orig.standardizedFileURL == moved.standardizedFileURL ? nil : (orig.standardizedFileURL, moved.standardizedFileURL)
+                }
+                if !pairs.isEmpty {
+                    self.pushUndo(.movedItems(pairs))
+                }
+            }
             self.refreshAllTabs()
             if self.activeTab.currentURL.standardizedFileURL == destDir.standardizedFileURL {
                 self.activeTab.selectedURLs = Set(createdURLs)
             } else if self.isDualPane && self.inactivePane.activeTab.currentURL.standardizedFileURL == destDir.standardizedFileURL {
                 self.inactivePane.activeTab.selectedURLs = Set(createdURLs)
             }
-            self.showStatus("Overføring fullført (\(createdURLs.count) elementer)")
+            self.showStatus(self.tr("Overføring fullført (\(createdURLs.count) elementer)", "Transfer complete (\(createdURLs.count) items)"))
         }
     }
 
@@ -337,7 +361,69 @@ final class WorkspaceState {
     }
 
     func tr(_ nb: String, _ en: String) -> String {
-        appLanguage.resolvedIsNorwegian ? nb : en
+        _ = appLanguage
+        return LocalizationCenter.shared.tr(nb, en)
+    }
+
+    func pushUndo(_ record: UndoRecord) {
+        undoStack.append(record)
+        if undoStack.count > 30 {
+            undoStack.removeFirst(undoStack.count - 30)
+        }
+    }
+
+    func recordRenameUndo(original: URL, renamed: URL) {
+        pushUndo(.renamedItem(original: original.standardizedFileURL, renamed: renamed.standardizedFileURL))
+    }
+
+    func undoLastFileOperation() {
+        guard guardNotInTourSandbox() else { return }
+        guard let record = undoStack.popLast() else { return }
+        let fm = FileManager.default
+        do {
+            switch record {
+            case .trashedItems(let pairs):
+                var restored: [URL] = []
+                for pair in pairs.reversed() {
+                    guard fm.fileExists(atPath: pair.trashed.path) else { continue }
+                    let dest = fm.fileExists(atPath: pair.original.path)
+                        ? FileSystemService.uniqueDestinationURL(for: pair.original, in: pair.original.deletingLastPathComponent())
+                        : pair.original
+                    try fm.moveItem(at: pair.trashed, to: dest)
+                    restored.append(dest)
+                }
+                refreshAllTabs()
+                if !restored.isEmpty {
+                    activeTab.selectedURLs = Set(restored)
+                }
+                showStatus(tr("Gjenopprettet \(restored.count) element(er) fra Papirkurven", "Restored \(restored.count) item(s) from Trash"))
+
+            case .renamedItem(let original, let renamed):
+                guard fm.fileExists(atPath: renamed.path) else { return }
+                let restoredURL = try FileSystemService.renameItem(at: renamed, to: original.lastPathComponent)
+                refreshAllTabs()
+                activeTab.selectedURLs = [restoredURL]
+                showStatus(tr("Angret navneendring til «\(restoredURL.lastPathComponent)»", "Undid rename back to “\(restoredURL.lastPathComponent)”"))
+
+            case .movedItems(let pairs):
+                var restored: [URL] = []
+                for pair in pairs.reversed() {
+                    guard fm.fileExists(atPath: pair.moved.path) else { continue }
+                    let dest = fm.fileExists(atPath: pair.original.path)
+                        ? FileSystemService.uniqueDestinationURL(for: pair.original, in: pair.original.deletingLastPathComponent())
+                        : pair.original
+                    try fm.moveItem(at: pair.moved, to: dest)
+                    restored.append(dest)
+                }
+                refreshAllTabs()
+                if !restored.isEmpty {
+                    activeTab.selectedURLs = Set(restored)
+                }
+                showStatus(tr("Angret flytting av \(restored.count) element(er)", "Undid move of \(restored.count) item(s)"))
+            }
+        } catch {
+            alertErrorMessage = error.localizedDescription
+        }
     }
 
     func openOnboardingGuide() {
@@ -656,7 +742,7 @@ final class WorkspaceState {
         // Entering .zip / .tar.gz archives (including via shortcuts!) directly as virtual folders!
         if !item.isNavigableFolder && ArchiveService.isSupportedArchive(destinationURL) {
             activeTab.enterArchive(destinationURL, showHidden: showHiddenFiles)
-            showStatus("Åpnet arkiv som virtuell mappe – Backspace går ut igjen")
+            showStatus(tr("Åpnet arkiv som virtuell mappe – Backspace går ut igjen", "Opened archive as virtual folder – press Backspace to exit"))
             return
         }
 
@@ -735,7 +821,7 @@ final class WorkspaceState {
 
     func openMultiRenameTool() {
         guard !activeTab.isInsideArchive else {
-            showStatus("Pakk ut filene først før masse-omdøping")
+            showStatus(tr("Pakk ut filene først før masse-omdøping", "Extract files first before batch renaming"))
             return
         }
         let targets = activeTab.effectiveActionItems
@@ -745,7 +831,7 @@ final class WorkspaceState {
             multiRenameTargetItems = targets
         }
         guard !multiRenameTargetItems.isEmpty else {
-            showStatus("Ingen filer i mappen å gi nytt navn til")
+            showStatus(tr("Ingen filer i mappen å gi nytt navn til", "No files in folder to rename"))
             return
         }
         isMultiRenameVisible = true
@@ -757,7 +843,7 @@ final class WorkspaceState {
             try MultiRenameService.undoBatchRename(record)
             lastBatchRename = nil
             refreshAllTabs()
-            showStatus("Angret masse-omdøping (\(record.pairs.count) filer tilbakeført)")
+            showStatus(tr("Angret masse-omdøping (\(record.pairs.count) filer tilbakeført)", "Undid batch rename (\(record.pairs.count) files restored)"))
         } catch {
             alertErrorMessage = error.localizedDescription
         }
@@ -769,7 +855,7 @@ final class WorkspaceState {
         guard !urls.isEmpty else { return }
         let added = transferQueue.addToDropShelf(urls)
         isDropShelfVisible = true
-        showStatus("La \(added) element(er) i Drop-hyllen")
+        showStatus(tr("La \(added) element(er) i Drop-hyllen", "Added \(added) item(s) to Drop Shelf"))
     }
 
     func transferDropShelfToActiveFolder(move: Bool) {
@@ -786,7 +872,9 @@ final class WorkspaceState {
         if move {
             transferQueue.clearDropShelf()
         }
-        showStatus("\(move ? "Flytter" : "Kopierer") \(items.count) element(er) fra Drop-hyllen...")
+        showStatus(move
+            ? tr("Flytter \(items.count) element(er) fra Drop-hyllen...", "Moving \(items.count) item(s) from Drop Shelf...")
+            : tr("Kopierer \(items.count) element(er) fra Drop-hyllen...", "Copying \(items.count) item(s) from Drop Shelf..."))
     }
 
     func toggleDualPaneComparison() {
@@ -896,7 +984,7 @@ final class WorkspaceState {
                 let folder = try ArchiveService.extractEntireArchive(archURL, in: parentDir)
                 tab.exitArchive(showHidden: showHiddenFiles)
                 tab.selectedURLs = [folder]
-                showStatus("Pakket ut til «\(folder.lastPathComponent)»")
+                showStatus(tr("Pakket ut til «\(folder.lastPathComponent)»", "Extracted to “\(folder.lastPathComponent)”"))
             } catch {
                 alertErrorMessage = error.localizedDescription
             }
@@ -908,7 +996,7 @@ final class WorkspaceState {
             let folder = try ArchiveService.extractEntireArchive(item.url, in: tab.currentURL)
             refreshAllTabs()
             tab.selectedURLs = [folder]
-            showStatus("Pakket ut til «\(folder.lastPathComponent)»")
+            showStatus(tr("Pakket ut til «\(folder.lastPathComponent)»", "Extracted to “\(folder.lastPathComponent)”"))
         } catch {
             alertErrorMessage = error.localizedDescription
         }
@@ -924,7 +1012,7 @@ final class WorkspaceState {
             activeTab.markedURLs.removeAll()
             refreshAllTabs()
             activeTab.selectedURLs = [zipURL]
-            showStatus("Opprettet arkivet «\(zipURL.lastPathComponent)»")
+            showStatus(tr("Opprettet arkivet «\(zipURL.lastPathComponent)»", "Created archive “\(zipURL.lastPathComponent)”"))
         } catch {
             alertErrorMessage = error.localizedDescription
         }
@@ -1051,7 +1139,7 @@ final class WorkspaceState {
                 clipboardURLs = extracted
                 clipboardOperation = .copy
                 writeToSystemPasteboard(extracted)
-                showStatus("Pakket ut og kopierte \(extracted.count) arkiv-element(er) til utklippstavlen")
+                showStatus(tr("Pakket ut og kopierte \(extracted.count) arkiv-element(er) til utklippstavlen", "Extracted and copied \(extracted.count) archive item(s) to clipboard"))
             }
             return
         }
@@ -1061,7 +1149,7 @@ final class WorkspaceState {
         clipboardURLs = urls
         clipboardOperation = .copy
         writeToSystemPasteboard(urls)
-        showStatus("Kopierte \(urls.count) element(er) til utklippstavlen")
+        showStatus(tr("Kopierte \(urls.count) element(er) til utklippstavlen", "Copied \(urls.count) item(s) to clipboard"))
     }
 
     func cutSelected() {
@@ -1071,13 +1159,13 @@ final class WorkspaceState {
         clipboardURLs = urls
         clipboardOperation = .cut
         writeToSystemPasteboard(urls)
-        showStatus("Klippet ut \(urls.count) element(er) – trykk Cmd+V for å flytte")
+        showStatus(tr("Klippet ut \(urls.count) element(er) – trykk Cmd+V for å flytte", "Cut \(urls.count) item(s) – press Cmd+V to move"))
     }
 
     func pasteIntoActiveFolder() {
         guard guardNotInTourSandbox() else { return }
         guard !activeTab.isInsideArchive else {
-            showStatus("Kan ikke lime inn direkte i et arkiv")
+            showStatus(tr("Kan ikke lime inn direkte i et arkiv", "Cannot paste directly into an archive"))
             return
         }
         syncClipboardWithSystemPasteboard()
@@ -1110,11 +1198,11 @@ final class WorkspaceState {
     func copySelectedToOppositePane() {
         guard guardNotInTourSandbox() else { return }
         guard isDualPane else {
-            showStatus("Slå på Dual-Pane (Cmd+D) for å kopiere til motsatt panel")
+            showStatus(tr("Slå på Dual-Pane (Cmd+D) for å kopiere til motsatt panel", "Enable Dual-Pane (Cmd+D) to copy to the opposite pane"))
             return
         }
         guard !inactivePane.activeTab.isInsideArchive else {
-            showStatus("Motsatt panel viser et arkiv – velg en vanlig mappe som mål")
+            showStatus(tr("Motsatt panel viser et arkiv – velg en vanlig mappe som mål", "Opposite pane shows an archive – choose a regular folder as destination"))
             return
         }
         let dest = inactivePane.activeTab.currentURL
@@ -1133,7 +1221,7 @@ final class WorkspaceState {
                 activeTab.markedURLs.removeAll()
                 refreshAllTabs()
                 inactivePane.activeTab.selectedURLs = Set(extracted)
-                showStatus("Pakket ut \(extracted.count) element(er) direkte til \(dest.lastPathComponent)")
+                showStatus(tr("Pakket ut \(extracted.count) element(er) direkte til \(dest.lastPathComponent)", "Extracted \(extracted.count) item(s) directly to \(dest.lastPathComponent)"))
             } catch {
                 alertErrorMessage = error.localizedDescription
             }
@@ -1150,11 +1238,11 @@ final class WorkspaceState {
     func moveSelectedToOppositePane() {
         guard guardNotInTourSandbox() else { return }
         guard isDualPane else {
-            showStatus("Slå på Dual-Pane (Cmd+D) for å flytte til motsatt panel")
+            showStatus(tr("Slå på Dual-Pane (Cmd+D) for å flytte til motsatt panel", "Enable Dual-Pane (Cmd+D) to move to the opposite pane"))
             return
         }
         guard !activeTab.isInsideArchive && !inactivePane.activeTab.isInsideArchive else {
-            showStatus("Kan ikke flytte til/fra et komprimert arkiv – bruk F5 for å kopiere ut")
+            showStatus(tr("Kan ikke flytte til/fra et komprimert arkiv – bruk F5 for å kopiere ut", "Cannot move to/from a compressed archive – use F5 to extract"))
             return
         }
         let urls = activeTab.effectiveActionURLs
@@ -1194,7 +1282,10 @@ final class WorkspaceState {
         let urls = activeTab.effectiveActionURLs
         guard !urls.isEmpty else { return }
         do {
-            try FileSystemService.trashItems(urls)
+            let trashed = try FileSystemService.trashItems(urls)
+            if !trashed.isEmpty {
+                pushUndo(.trashedItems(trashed))
+            }
             activeTab.markedURLs.removeAll()
             refreshAllTabs()
             showStatus(tr("La \(urls.count) element(er) i Papirkurven", "Moved \(urls.count) item(s) to Trash"))
@@ -1217,7 +1308,7 @@ final class WorkspaceState {
             try FileSystemService.permanentlyDeleteItems(urls)
             activeTab.markedURLs.removeAll()
             refreshAllTabs()
-            showStatus("Slettet \(urls.count) element(er) permanent")
+            showStatus(tr("Slettet \(urls.count) element(er) permanent", "Permanently deleted \(urls.count) item(s)"))
         } catch {
             alertErrorMessage = error.localizedDescription
         }
@@ -1232,7 +1323,7 @@ final class WorkspaceState {
         }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(path, forType: .string)
-        showStatus("Kopierte sti: \(path)")
+        showStatus(tr("Kopierte sti: \(path)", "Copied path: \(path)"))
     }
 
     func openTerminalInActiveFolder() {
@@ -1254,7 +1345,7 @@ final class WorkspaceState {
         let standardized = url.standardizedFileURL
         if let idx = favorites.firstIndex(where: { $0.path == standardized.path }) {
             favorites.remove(at: idx)
-            showStatus("Fjernet «\(standardized.lastPathComponent)» fra Hurtigtilgang")
+            showStatus(tr("Fjernet «\(standardized.lastPathComponent)» fra Hurtigtilgang", "Removed “\(standardized.lastPathComponent)” from Quick Access"))
         } else {
             let fav = FavoriteItem(
                 title: standardized.lastPathComponent,
@@ -1262,7 +1353,7 @@ final class WorkspaceState {
                 systemImage: "folder.fill"
             )
             favorites.append(fav)
-            showStatus("Festet «\(standardized.lastPathComponent)» til Hurtigtilgang")
+            showStatus(tr("Festet «\(standardized.lastPathComponent)» til Hurtigtilgang", "Pinned “\(standardized.lastPathComponent)” to Quick Access"))
         }
     }
 
@@ -1270,7 +1361,7 @@ final class WorkspaceState {
         volumes = FileSystemService.mountedVolumes()
         cloudAccounts = CloudStorageService.discoverCloudAccounts()
         let homeURL = FileManager.default.homeDirectoryForCurrentUser
-        let homeNode = FolderTreeNode(url: homeURL, name: "\(homeURL.lastPathComponent) (Hjem)")
+        let homeNode = FolderTreeNode(url: homeURL, name: "\(homeURL.lastPathComponent) (\(tr("Hjem", "Home")))")
         homeNode.isExpanded = true
         homeNode.loadChildrenIfNeeded(showHidden: showHiddenFiles)
 
@@ -1331,13 +1422,13 @@ final class WorkspaceState {
         guard let target = item.resolvedTargetURL else { return }
         let parentDir = target.deletingLastPathComponent()
         activeTab.navigate(to: parentDir, showHidden: showHiddenFiles, selecting: target)
-        showStatus("Gikk til originalplasseringen: \(parentDir.path)")
+        showStatus(tr("Gikk til originalplasseringen: \(parentDir.path)", "Navigated to original location: \(parentDir.path)"))
     }
 
     func createShortcutInOppositePane() {
         guard guardNotInTourSandbox() else { return }
         guard isDualPane else {
-            showStatus("Slå på Dual-Pane (Cmd+D) for å opprette snarvei i motsatt panel")
+            showStatus(tr("Slå på Dual-Pane (Cmd+D) for å opprette snarvei i motsatt panel", "Enable Dual-Pane (Cmd+D) to create shortcut in opposite pane"))
             return
         }
         guard !activeTab.isInsideArchive && !inactivePane.activeTab.isInsideArchive else { return }
@@ -1353,7 +1444,7 @@ final class WorkspaceState {
             }
             refreshAllTabs()
             inactivePane.activeTab.selectedURLs = Set(created)
-            showStatus("Opprettet \(created.count) snarvei(er) i \(dest.lastPathComponent)")
+            showStatus(tr("Opprettet \(created.count) snarvei(er) i \(dest.lastPathComponent)", "Created \(created.count) shortcut(s) in \(dest.lastPathComponent)"))
         } catch {
             alertErrorMessage = error.localizedDescription
         }
@@ -1366,9 +1457,9 @@ final class WorkspaceState {
         do {
             try CloudStorageService.evictLocalCopy(at: urls)
             refreshAllTabs()
-            showStatus("Frigjorde lokal plass for \(urls.count) element(er) – ligger trygt i skyen")
+            showStatus(tr("Frigjorde lokal plass for \(urls.count) element(er) – ligger trygt i skyen", "Freed local space for \(urls.count) item(s) – safely stored in cloud"))
         } catch {
-            alertErrorMessage = "Kunne ikke frigjøre lokal kopi: \(error.localizedDescription)"
+            alertErrorMessage = tr("Kunne ikke frigjøre lokal kopi: \(error.localizedDescription)", "Could not free local copy: \(error.localizedDescription)")
         }
     }
 
@@ -1379,9 +1470,9 @@ final class WorkspaceState {
         do {
             try CloudStorageService.downloadLocalCopy(at: urls)
             refreshAllTabs()
-            showStatus("Startet nedlasting til Macen for \(urls.count) sky-element(er)")
+            showStatus(tr("Startet nedlasting til Macen for \(urls.count) sky-element(er)", "Started downloading \(urls.count) cloud item(s) to Mac"))
         } catch {
-            alertErrorMessage = "Kunne ikke starte nedlasting: \(error.localizedDescription)"
+            alertErrorMessage = tr("Kunne ikke starte nedlasting: \(error.localizedDescription)", "Could not start download: \(error.localizedDescription)")
         }
     }
 
@@ -1634,10 +1725,12 @@ final class WorkspaceState {
     }
 
     func showStatus(_ text: String) {
+        statusBannerGeneration &+= 1
+        let gen = statusBannerGeneration
         statusBanner = text
         Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 3_200_000_000)
-            if self?.statusBanner == text {
+            if self?.statusBannerGeneration == gen {
                 self?.statusBanner = nil
             }
         }

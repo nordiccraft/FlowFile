@@ -24,13 +24,21 @@ struct ShareHubSheetView: View {
     @State private var cachedOptions: SharePreparationOptions? = nil
     @State private var cachedPayload: SharePreparedPayload? = nil
     @State private var isPreparing: Bool = false
+    @State private var isCreatingCloudLink: Bool = false
     @State private var feedbackBanner: String? = nil
     @State private var warningBanner: String? = nil
+    @State private var createdShareURL: URL? = nil
+
+    // Cloud link options
+    @State private var oneDriveOrgOnly: Bool = true
+    @State private var googleAnyoneCanView: Bool = true
 
     // Cached system lookups (avoid querying LaunchServices on every SwiftUI body redraw)
     @State private var defaultEmailName: String = ""
     @State private var outlookInstalled: Bool = false
     @State private var defaultIsOutlook: Bool = false
+    @State private var teamsInstalled: Bool = false
+    @State private var slackInstalled: Bool = false
     @State private var airDropIcon: NSImage? = nil
     @State private var messagesIcon: NSImage? = nil
     @State private var mailIcon: NSImage? = nil
@@ -38,7 +46,7 @@ struct ShareHubSheetView: View {
     // Native macOS share picker anchor
     @State private var pickerAnchorView: NSView? = nil
 
-    // Cloud upload confirmation
+    // Cloud upload confirmation (local FileProvider copy fallback)
     @State private var pendingCloudUploadAccount: CloudAccountItem? = nil
 
     // Live countdown ticker for active QR share
@@ -51,8 +59,16 @@ struct ShareHubSheetView: View {
         workspace.wifiShareServer
     }
 
+    private var oauth: CloudShareOAuthService {
+        CloudShareOAuthService.shared
+    }
+
+    private var hasDirectoriesOrPackages: Bool {
+        targetItems.contains(where: { $0.isNavigableFolder || $0.isDirectory || $0.isPackage })
+    }
+
     private var hasDirectoriesOrMultiple: Bool {
-        targetItems.count > 1 || targetItems.contains(where: { $0.isNavigableFolder || $0.isDirectory || $0.isPackage })
+        targetItems.count > 1 || hasDirectoriesOrPackages
     }
 
     private var hasImages: Bool {
@@ -81,6 +97,14 @@ struct ShareHubSheetView: View {
         estimatedSelectionBytes > 20 * 1_048_576
     }
 
+    private var primaryDraggableURL: URL? {
+        cachedPayload?.urls.first ?? targetItems.first?.navigationTargetURL
+    }
+
+    private var isBusy: Bool {
+        isPreparing || isCreatingCloudLink
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
@@ -88,24 +112,33 @@ struct ShareHubSheetView: View {
                 bannersSection
                 preparationSection
                 directChannelsSection
-                cloudSection
+                cloudLinksSection
                 wifiQRSection
                 footerSection
             }
             .padding(18)
         }
-        .frame(width: 740)
-        .frame(maxHeight: 740)
+        .frame(width: 760)
+        .frame(maxHeight: 780)
         .onAppear {
             defaultEmailName = ShareHubService.defaultEmailAppName()
             outlookInstalled = ShareHubService.installedOutlookURL() != nil
             defaultIsOutlook = ShareHubService.isDefaultEmailAppOutlook()
+            teamsInstalled = ShareHubService.installedTeamsURL() != nil
+            slackInstalled = ShareHubService.installedSlackURL() != nil
             airDropIcon = ShareHubService.systemServiceIcon(named: .sendViaAirDrop)
             messagesIcon = ShareHubService.systemServiceIcon(named: .composeMessage)
             mailIcon = ShareHubService.systemServiceIcon(named: .composeEmail)
             wifiServer.refreshInterfaces()
 
-            if hasDirectoriesOrMultiple {
+            // Invalidate cached staging payload if the Wi-Fi server stops and deletes its owned staging directory
+            wifiServer.onDidStop = {
+                cachedPayload = nil
+                cachedOptions = nil
+            }
+
+            // Only auto-enable ZIP for folders/packages — do NOT force-zip multiple regular files for AirDrop/Messages!
+            if hasDirectoriesOrPackages {
                 options.packageAsCleanZip = true
             }
             if let first = targetItems.first {
@@ -119,6 +152,9 @@ struct ShareHubSheetView: View {
             if ShareHubService.containsHeicImages(targetItems) {
                 options.convertHeicAndStripGPS = true
             }
+        }
+        .onDisappear {
+            wifiServer.onDidStop = nil
         }
         .onChange(of: options) { _, _ in
             cachedPayload = nil
@@ -207,6 +243,40 @@ struct ShareHubSheetView: View {
             .padding(8)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.12)))
+        }
+
+        if let shareURL = createdShareURL {
+            HStack(spacing: 10) {
+                Image(systemName: "link.circle.fill")
+                    .font(.system(size: 18))
+                    .foregroundStyle(.green)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(workspace.tr("Delingslenke klar og kopiert til utklippstavlen:", "Share link ready and copied to clipboard:"))
+                        .font(.system(size: 11, weight: .semibold))
+                    Text(shareURL.absoluteString)
+                        .font(.system(size: 11, design: .monospaced))
+                        .textSelection(.enabled)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                Spacer()
+                Button(workspace.tr("Kopier", "Copy")) {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(shareURL.absoluteString, forType: .string)
+                    feedbackBanner = workspace.tr("Delingslenke kopiert!", "Share link copied!")
+                }
+                .buttonStyle(.glass)
+                .controlSize(.small)
+
+                Button(workspace.tr("Åpne", "Open")) {
+                    NSWorkspace.shared.open(shareURL)
+                }
+                .buttonStyle(.glass)
+                .controlSize(.small)
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 9).fill(Color.green.opacity(0.12)))
         }
 
         if let payload = cachedPayload {
@@ -337,15 +407,15 @@ struct ShareHubSheetView: View {
     private var directChannelsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text(workspace.tr("2. SEND DIREKTE ELLER VIA MACOS DEL-MENY", "2. SEND DIRECTLY OR VIA MACOS SHARE MENU"))
+                Text(workspace.tr("2. SEND DIREKTE (E-POST, OUTLOOK, AIRDROP, TEAMS & SLACK)", "2. SEND DIRECTLY (MAIL, OUTLOOK, AIRDROP, TEAMS & SLACK)"))
                     .font(.system(size: 10.5, weight: .bold))
                     .foregroundStyle(.secondary)
                 Spacer()
                 if exceedsTypicalEmailLimit {
                     Label(
                         workspace.tr(
-                            "Over 20 MB – e-post kan avvise vedlegget; bruk QR eller sky i stedet",
-                            "Over 20 MB – email may reject attachment; use QR or cloud instead"
+                            "Over 20 MB – bruk skylenke eller Wi-Fi QR i stedet for e-post",
+                            "Over 20 MB – use a cloud link or Wi-Fi QR instead of email"
                         ),
                         systemImage: "exclamationmark.triangle.fill"
                     )
@@ -355,52 +425,33 @@ struct ShareHubSheetView: View {
             }
 
             HStack(spacing: 8) {
-                // Native macOS Share Menu (covers Mail, AirDrop, Messages, Notes, iCloud, Outlook/Dropbox/OneDrive extensions)
-                shareCardButton(
-                    title: workspace.tr("macOS Del…", "macOS Share…"),
-                    subtitle: workspace.tr("Alle delingsutvidelser", "All share extensions"),
-                    sfSymbol: "square.and.arrow.up",
-                    nsImage: nil
-                ) {
-                    runPreparedAction { payload in
-                        if let anchor = pickerAnchorView {
-                            ShareHubService.presentSystemSharePicker(items: payload.urls, relativeTo: anchor)
-                        }
-                    }
-                }
-                .background(
-                    SharePickerAnchorView { view in
-                        pickerAnchorView = view
-                    }
-                )
-
-                shareCardButton(
-                    title: workspace.tr("E-post", "Mail") + (defaultEmailName.isEmpty ? "" : " (\(defaultEmailName))"),
-                    subtitle: workspace.tr("Ekte filvedlegg", "Real attachment"),
-                    sfSymbol: "envelope.fill",
-                    nsImage: mailIcon
-                ) {
-                    runPreparedAction { payload in
-                        _ = ShareHubService.shareViaDefaultEmail(payload.urls) { result in
-                            handleDeliveryResult(result, channelName: defaultEmailName, dismissOnSuccess: true)
-                        }
-                    }
-                }
-
-                if outlookInstalled && !defaultIsOutlook {
+                // Always show dedicated Outlook button whenever Outlook is installed (even if Outlook is default mail app!)
+                if outlookInstalled {
                     shareCardButton(
                         title: "Outlook",
                         subtitle: workspace.tr("Nytt utkast", "New draft"),
-                        sfSymbol: "tray.full.fill",
+                        sfSymbol: "envelope.badge.fill",
                         nsImage: nil
                     ) {
-                        var outlookOpts = options
-                        if ShareHubService.containsOutlookImportableTypes(targetItems.map(\.navigationTargetURL)) {
-                            outlookOpts.packageAsCleanZip = true
-                        }
-                        runPreparedAction(overrideOptions: outlookOpts) { payload in
+                        runPreparedAction { payload in
                             _ = ShareHubService.shareViaOutlook(payload.urls) { result in
                                 handleDeliveryResult(result, channelName: "Microsoft Outlook", dismissOnSuccess: true)
+                            }
+                        }
+                    }
+                }
+
+                // Show default mail client when it's NOT Outlook (e.g. Apple Mail, Spark, Thunderbird)
+                if !defaultIsOutlook {
+                    shareCardButton(
+                        title: workspace.tr("E-post", "Mail") + (defaultEmailName.isEmpty ? "" : " (\(defaultEmailName))"),
+                        subtitle: workspace.tr("Ekte filvedlegg", "Real attachment"),
+                        sfSymbol: "envelope.fill",
+                        nsImage: mailIcon
+                    ) {
+                        runPreparedAction { payload in
+                            _ = ShareHubService.shareViaDefaultEmail(payload.urls) { result in
+                                handleDeliveryResult(result, channelName: defaultEmailName, dismissOnSuccess: true)
                             }
                         }
                     }
@@ -432,48 +483,276 @@ struct ShareHubSheetView: View {
                     }
                 }
 
+                // Native macOS Share Menu (Notes, Reminders, Freeform & system share extensions — NOT OneDrive/Google Drive links)
                 shareCardButton(
-                    title: "Teams / Slack",
-                    subtitle: workspace.tr("Kopier (⌘V)", "Copy (⌘V)"),
-                    sfSymbol: "bubble.left.and.bubble.right.fill",
+                    title: workspace.tr("macOS Del…", "macOS Share…"),
+                    subtitle: workspace.tr("Notater m.fl.", "Notes & extensions"),
+                    sfSymbol: "square.and.arrow.up",
                     nsImage: nil
                 ) {
+                    runPreparedAction { payload in
+                        if let anchor = pickerAnchorView {
+                            ShareHubService.presentSystemSharePicker(items: payload.urls, relativeTo: anchor)
+                        }
+                    }
+                }
+                .background(
+                    SharePickerAnchorView { view in
+                        pickerAnchorView = view
+                    }
+                )
+            }
+            .disabled(isBusy)
+
+            // Reliable Teams / Slack handoff bar: draggable file chip + bring app to front + clipboard fallback
+            HStack(spacing: 8) {
+                HStack(spacing: 6) {
+                    Image(systemName: "hand.draw.fill")
+                        .foregroundStyle(Color.accentColor)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(workspace.tr("Dra til Teams / Slack", "Drag to Teams / Slack"))
+                            .font(.system(size: 11.5, weight: .semibold))
+                        Text(primaryDraggableURL?.lastPathComponent ?? selectionSummary)
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.accentColor.opacity(0.12)))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                        .foregroundStyle(Color.accentColor.opacity(0.45))
+                )
+                .onDrag {
+                    if let url = primaryDraggableURL {
+                        return NSItemProvider(contentsOf: url) ?? NSItemProvider()
+                    }
+                    return NSItemProvider()
+                }
+                .help(workspace.tr(
+                    "Dra denne brikken rett inn i en chat i Microsoft Teams eller Slack for 100 % pålitelig filopplasting.",
+                    "Drag this chip directly into a Microsoft Teams or Slack chat for reliable file upload."
+                ))
+
+                Spacer()
+
+                if teamsInstalled {
+                    Button {
+                        if !ShareHubService.bringChatAppToFront(bundleID: "com.microsoft.teams2") {
+                            _ = ShareHubService.bringChatAppToFront(bundleID: "com.microsoft.teams")
+                        }
+                    } label: {
+                        Label(workspace.tr("Hent Teams til front", "Bring Teams to Front"), systemImage: "bubble.left.and.bubble.right.fill")
+                            .font(.system(size: 11))
+                    }
+                    .buttonStyle(.glass)
+                    .controlSize(.small)
+                }
+
+                if slackInstalled {
+                    Button {
+                        _ = ShareHubService.bringChatAppToFront(bundleID: "com.tinyspeck.slackmacgap")
+                    } label: {
+                        Label(workspace.tr("Hent Slack til front", "Bring Slack to Front"), systemImage: "number")
+                            .font(.system(size: 11))
+                    }
+                    .buttonStyle(.glass)
+                    .controlSize(.small)
+                }
+
+                Button {
                     runPreparedAction { payload in
                         ShareHubService.copyPreparedFilesForChatApps(payload.urls)
                         warningBanner = nil
                         feedbackBanner = workspace.tr(
-                            "Klargjort fil er kopiert – gå til Slack/Teams og trykk ⌘V (eller dra filen direkte).",
-                            "Prepared file copied – switch to Slack/Teams and press ⌘V (or drag the file directly)."
+                            "Fil kopiert – trykk ⌘V i chat (eller dra brikken til venstre inn i Teams/Slack).",
+                            "File copied – press ⌘V in chat (or drag the chip on the left into Teams/Slack)."
                         )
                     }
+                } label: {
+                    Label(workspace.tr("Kopier (⌘V)", "Copy (⌘V)"), systemImage: "doc.on.clipboard")
+                        .font(.system(size: 11))
                 }
+                .buttonStyle(.glass)
+                .controlSize(.small)
+                .disabled(isBusy)
             }
-            .disabled(isPreparing)
+            .padding(8)
+            .background(Color.primary.opacity(0.035))
+            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         }
     }
 
-    private var cloudSection: some View {
+    private var cloudLinksSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(workspace.tr(
-                "3. SKYLAGRING (ONEDRIVE, DROPBOX, GOOGLE DRIVE, BOX & ICLOUD)",
-                "3. CLOUD STORAGE (ONEDRIVE, DROPBOX, GOOGLE DRIVE, BOX & ICLOUD)"
-            ))
-            .font(.system(size: 10.5, weight: .bold))
-            .foregroundStyle(.secondary)
+            HStack {
+                Text(workspace.tr(
+                    "3. LAG EKTE SKYLENKE (ONEDRIVE, TEAMS & GOOGLE DRIVE)",
+                    "3. CREATE REAL CLOUD SHARE LINK (ONEDRIVE, TEAMS & GOOGLE DRIVE)"
+                ))
+                .font(.system(size: 10.5, weight: .bold))
+                .foregroundStyle(.secondary)
+                Spacer()
+                if isCreatingCloudLink {
+                    HStack(spacing: 5) {
+                        ProgressView().controlSize(.mini)
+                        Text(workspace.tr("Oppretter delingslenke…", "Creating share link…"))
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
 
+            // 3A. OneDrive & Teams 1-click OAuth link bar
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    Image(systemName: "cloud.fill")
+                        .foregroundStyle(Color.accentColor)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("OneDrive & Microsoft Teams")
+                            .font(.system(size: 12, weight: .semibold))
+                        if oauth.isMicrosoftSignedIn {
+                            Text(oauth.microsoftAccountEmail ?? workspace.tr("Tilkoblet Microsoft-konto", "Microsoft account connected"))
+                                .font(.system(size: 10.5))
+                                .foregroundStyle(.green)
+                        } else if oauth.microsoftClientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            Text(workspace.tr(
+                                "Legg inn Microsoft Client ID i Innstillinger for 1-klikk OneDrive- og Teams-lenker.",
+                                "Add Microsoft Client ID in Settings for 1-click OneDrive & Teams links."
+                            ))
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(.secondary)
+                        } else {
+                            Text(workspace.tr("Ikke logget inn på Microsoft ennå", "Not signed in to Microsoft yet"))
+                                .font(.system(size: 10.5))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    Spacer()
+
+                    if oauth.isMicrosoftSignedIn {
+                        Picker("", selection: $oneDriveOrgOnly) {
+                            Text(workspace.tr("Kun org.", "Org only")).tag(true)
+                            Text(workspace.tr("Alle med lenke", "Anyone")).tag(false)
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        .controlSize(.small)
+                        .frame(width: 175)
+
+                        Button(workspace.tr("Lag OneDrive-lenke", "Create OneDrive Link")) {
+                            createOneDriveLink(openInTeams: false)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        .disabled(isBusy)
+
+                        Button(workspace.tr("Del lenke i Teams", "Share Link in Teams")) {
+                            createOneDriveLink(openInTeams: true)
+                        }
+                        .buttonStyle(.glass)
+                        .controlSize(.small)
+                        .disabled(isBusy)
+                    } else if oauth.microsoftClientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Button(workspace.tr("Åpne Innstillinger", "Open Settings")) {
+                            dismiss()
+                            workspace.isSettingsVisible = true
+                        }
+                        .buttonStyle(.glass)
+                        .controlSize(.small)
+                    } else {
+                        Button(workspace.tr("Logg inn med Microsoft", "Sign in with Microsoft")) {
+                            signInMicrosoftInline()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        .disabled(isBusy)
+                    }
+                }
+            }
+            .padding(10)
+            .background(Color.primary.opacity(0.04))
+            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+
+            // 3B. Google Drive 1-click OAuth link bar
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    Image(systemName: "externaldrive.connected.to.line.below.fill")
+                        .foregroundStyle(Color.accentColor)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Google Drive")
+                            .font(.system(size: 12, weight: .semibold))
+                        if oauth.isGoogleSignedIn {
+                            Text(oauth.googleAccountEmail ?? workspace.tr("Tilkoblet Google-konto", "Google account connected"))
+                                .font(.system(size: 10.5))
+                                .foregroundStyle(.green)
+                        } else if oauth.googleClientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            Text(workspace.tr(
+                                "Legg inn Google Client ID i Innstillinger for 1-klikk Google Drive-lenker.",
+                                "Add Google Client ID in Settings for 1-click Google Drive links."
+                            ))
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(.secondary)
+                        } else {
+                            Text(workspace.tr("Ikke logget inn på Google ennå", "Not signed in to Google yet"))
+                                .font(.system(size: 10.5))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    Spacer()
+
+                    if oauth.isGoogleSignedIn {
+                        Toggle(workspace.tr("Alle med lenke", "Anyone with link"), isOn: $googleAnyoneCanView)
+                            .toggleStyle(.checkbox)
+                            .font(.system(size: 11))
+
+                        Button(workspace.tr("Last opp & lag Google Drive-lenke", "Upload & Create Google Drive Link")) {
+                            createGoogleDriveLink()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        .disabled(isBusy)
+                    } else if oauth.googleClientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Button(workspace.tr("Åpne Innstillinger", "Open Settings")) {
+                            dismiss()
+                            workspace.isSettingsVisible = true
+                        }
+                        .buttonStyle(.glass)
+                        .controlSize(.small)
+                    } else {
+                        Button(workspace.tr("Logg inn med Google", "Sign in with Google")) {
+                            signInGoogleInline()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        .disabled(isBusy)
+                    }
+                }
+            }
+            .padding(10)
+            .background(Color.primary.opacity(0.04))
+            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+
+            // 3C. Honest local FileProvider / Finder fallback (no OAuth required)
             if let activeCloud = sharedCloudAccountForAllItems {
                 HStack(spacing: 10) {
                     Image(systemName: activeCloud.provider.systemImage)
                         .foregroundStyle(Color.accentColor)
                     VStack(alignment: .leading, spacing: 1) {
                         Text(workspace.tr(
-                            "Ligger allerede i \(activeCloud.fullDisplayName)",
-                            "Already stored in \(activeCloud.fullDisplayName)"
+                            "Ligger lokalt i \(activeCloud.fullDisplayName)",
+                            "Stored locally in \(activeCloud.fullDisplayName)"
                         ))
-                        .font(.system(size: 12.5, weight: .medium))
+                        .font(.system(size: 11.5, weight: .medium))
                         Text(workspace.tr(
-                            "Bruk «macOS Del…» eller høyreklikk i Finder for å opprette delingslenke i \(activeCloud.displayName).",
-                            "Use “macOS Share…” or right-click in Finder to create a share link in \(activeCloud.displayName)."
+                            "Uten OAuth-pålogging må lokal sky-deling gjøres via høyreklikk i Finder (macOS lar ikke tredjepartsapper åpne sky-utvidelsen direkte).",
+                            "Without OAuth sign-in, local cloud sharing requires right-clicking in Finder (macOS restricts cloud extensions to Finder)."
                         ))
                         .font(.system(size: 10.5))
                         .foregroundStyle(.secondary)
@@ -489,32 +768,12 @@ struct ShareHubSheetView: View {
                         DefaultFileBrowserService.revealExplicitlyInAppleFinder(targetItems.map(\.url))
                     }
                     .buttonStyle(.glass)
-
-                    Button(workspace.tr("Kopier filsti", "Copy Path")) {
-                        if workspace.tour.isSandboxActive {
-                            feedbackBanner = workspace.tr("Øvingsmodus: Filsti kopiert (simulert).", "Practice Mode: Path copied (simulated).")
-                            return
-                        }
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(targetItems.map(\.url.path).joined(separator: "\n"), forType: .string)
-                        feedbackBanner = workspace.tr(
-                            "Kopierte sti i \(activeCloud.fullDisplayName)",
-                            "Copied path in \(activeCloud.fullDisplayName)"
-                        )
-                    }
-                    .buttonStyle(.glass)
+                    .controlSize(.small)
                 }
-                .padding(10)
-                .background(Color.accentColor.opacity(0.08))
+                .padding(9)
+                .background(Color.accentColor.opacity(0.06))
                 .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-            } else if workspace.cloudAccounts.isEmpty {
-                Text(workspace.tr(
-                    "Ingen lokale skykontoer (OneDrive, Dropbox, Google Drive, Box) ble funnet på denne Macen ennå.",
-                    "No local cloud accounts (OneDrive, Dropbox, Google Drive, Box) were found on this Mac yet."
-                ))
-                .font(.system(size: 11.5))
-                .foregroundStyle(.secondary)
-            } else {
+            } else if !workspace.cloudAccounts.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
                         ForEach(workspace.cloudAccounts) { account in
@@ -532,18 +791,18 @@ struct ShareHubSheetView: View {
                                     Image(systemName: account.provider.systemImage)
                                         .foregroundStyle(Color.accentColor)
                                     VStack(alignment: .leading, spacing: 1) {
-                                        Text(workspace.tr("Last opp til \(account.fullDisplayName)", "Upload to \(account.fullDisplayName)"))
-                                            .font(.system(size: 12, weight: .medium))
-                                        Text(workspace.tr("Ny privat mappe (kun deg)", "New private folder (only you)"))
-                                            .font(.system(size: 10))
+                                        Text(workspace.tr("Kopier til \(account.fullDisplayName)", "Copy to \(account.fullDisplayName)"))
+                                            .font(.system(size: 11.5, weight: .medium))
+                                        Text(workspace.tr("Lokal mappe (privat)", "Local folder (private)"))
+                                            .font(.system(size: 9.5))
                                             .foregroundStyle(.secondary)
                                     }
                                 }
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
+                                .padding(.horizontal, 9)
+                                .padding(.vertical, 5)
                             }
                             .buttonStyle(.glass)
-                            .disabled(isPreparing)
+                            .disabled(isBusy)
                         }
                     }
                 }
@@ -582,7 +841,6 @@ struct ShareHubSheetView: View {
                         }
 
                         VStack(alignment: .leading, spacing: 6) {
-                            // Self-test status + interface selector
                             HStack(spacing: 8) {
                                 selfTestBadge
                                 Spacer()
@@ -632,7 +890,6 @@ struct ShareHubSheetView: View {
                                 }
                             }
 
-                            // Countdown & Extend
                             HStack(spacing: 10) {
                                 Text(remainingTimeLabel)
                                     .font(.system(size: 11, design: .monospaced))
@@ -673,7 +930,6 @@ struct ShareHubSheetView: View {
                         }
                     }
 
-                    // Actionable Local Network permission guidance if self-test failed
                     if wifiServer.selfTestState == .blockedByLocalNetwork {
                         HStack(spacing: 10) {
                             Image(systemName: "wifi.exclamationmark")
@@ -715,7 +971,6 @@ struct ShareHubSheetView: View {
                         .background(RoundedRectangle(cornerRadius: 8).fill(Color.accentColor.opacity(0.08)))
                     }
 
-                    // Live download log
                     if !wifiServer.downloadEvents.isEmpty {
                         VStack(alignment: .leading, spacing: 3) {
                             ForEach(wifiServer.downloadEvents.prefix(3)) { ev in
@@ -756,7 +1011,7 @@ struct ShareHubSheetView: View {
                                 .font(.system(size: 12, weight: .semibold))
                         }
                         .buttonStyle(.borderedProminent)
-                        .disabled(isPreparing)
+                        .disabled(isBusy)
                     }
 
                     HStack(spacing: 14) {
@@ -836,6 +1091,13 @@ struct ShareHubSheetView: View {
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.small)
                     Text(workspace.tr("Klargjør filer i bakgrunnen…", "Preparing files in background…"))
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+            } else if isCreatingCloudLink {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text(workspace.tr("Laster opp og oppretter delingslenke…", "Uploading and creating share link…"))
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 }
@@ -961,6 +1223,143 @@ struct ShareHubSheetView: View {
             }
         case .failure(let error):
             warningBanner = error.localizedDescription
+        }
+    }
+
+    private func signInMicrosoftInline() {
+        isCreatingCloudLink = true
+        warningBanner = nil
+        feedbackBanner = nil
+        Task {
+            do {
+                try await oauth.signInMicrosoft()
+                await MainActor.run {
+                    isCreatingCloudLink = false
+                    feedbackBanner = workspace.tr("Logget inn på Microsoft OneDrive!", "Signed in to Microsoft OneDrive!")
+                }
+            } catch {
+                await MainActor.run {
+                    isCreatingCloudLink = false
+                    warningBanner = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    private func signInGoogleInline() {
+        isCreatingCloudLink = true
+        warningBanner = nil
+        feedbackBanner = nil
+        Task {
+            do {
+                try await oauth.signInGoogle()
+                await MainActor.run {
+                    isCreatingCloudLink = false
+                    feedbackBanner = workspace.tr("Logget inn på Google Drive!", "Signed in to Google Drive!")
+                }
+            } catch {
+                await MainActor.run {
+                    isCreatingCloudLink = false
+                    warningBanner = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    private func createOneDriveLink(openInTeams: Bool) {
+        if workspace.tour.isSandboxActive {
+            feedbackBanner = workspace.tr(
+                "Øvingsmodus: OneDrive-delingslenke simulert!",
+                "Practice Mode: OneDrive share link simulated!"
+            )
+            return
+        }
+        var linkOpts = options
+        if hasDirectoriesOrMultiple {
+            linkOpts.packageAsCleanZip = true
+        }
+        runPreparedAction(overrideOptions: linkOpts) { payload in
+            guard let fileURL = payload.urls.first else { return }
+            isCreatingCloudLink = true
+            warningBanner = nil
+            feedbackBanner = nil
+            Task {
+                do {
+                    let shareURL = try await oauth.createOneDriveShareLink(
+                        for: fileURL,
+                        organizationOnly: oneDriveOrgOnly
+                    )
+                    await MainActor.run {
+                        isCreatingCloudLink = false
+                        createdShareURL = shareURL
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(shareURL.absoluteString, forType: .string)
+                        if openInTeams {
+                            CloudShareOAuthService.openTeamsChat(
+                                withShareURL: shareURL,
+                                fileName: fileURL.lastPathComponent
+                            )
+                            feedbackBanner = workspace.tr(
+                                "OneDrive-lenke kopiert og åpnet i Microsoft Teams!",
+                                "OneDrive link copied and opened in Microsoft Teams!"
+                            )
+                        } else {
+                            feedbackBanner = workspace.tr(
+                                "OneDrive-lenke opprettet og kopiert til utklippstavlen!",
+                                "OneDrive link created and copied to clipboard!"
+                            )
+                        }
+                    }
+                } catch {
+                    await MainActor.run {
+                        isCreatingCloudLink = false
+                        warningBanner = error.localizedDescription
+                    }
+                }
+            }
+        }
+    }
+
+    private func createGoogleDriveLink() {
+        if workspace.tour.isSandboxActive {
+            feedbackBanner = workspace.tr(
+                "Øvingsmodus: Google Drive-delingslenke simulert!",
+                "Practice Mode: Google Drive share link simulated!"
+            )
+            return
+        }
+        var linkOpts = options
+        if hasDirectoriesOrMultiple {
+            linkOpts.packageAsCleanZip = true
+        }
+        runPreparedAction(overrideOptions: linkOpts) { payload in
+            guard let fileURL = payload.urls.first else { return }
+            isCreatingCloudLink = true
+            warningBanner = nil
+            feedbackBanner = nil
+            Task {
+                do {
+                    let shareURL = try await oauth.uploadAndCreateGoogleDriveLink(
+                        for: fileURL,
+                        anyoneCanView: googleAnyoneCanView
+                    )
+                    await MainActor.run {
+                        isCreatingCloudLink = false
+                        createdShareURL = shareURL
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(shareURL.absoluteString, forType: .string)
+                        feedbackBanner = workspace.tr(
+                            "Google Drive-lenke opprettet og kopiert til utklippstavlen!",
+                            "Google Drive link created and copied to clipboard!"
+                        )
+                    }
+                } catch {
+                    await MainActor.run {
+                        isCreatingCloudLink = false
+                        warningBanner = error.localizedDescription
+                    }
+                }
+            }
         }
     }
 

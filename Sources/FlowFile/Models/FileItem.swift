@@ -123,7 +123,7 @@ struct FileItem: Identifiable, Hashable {
             self.stemName = name
             self.fileExtension = ""
             self.rawFileExtension = ""
-            self.kindDescription = "Arkivmappe"
+            self.kindDescription = tr("Arkivmappe", "Archive Folder")
         } else {
             let ext = (name as NSString).pathExtension
             if name.hasPrefix(".") && !name.dropFirst().contains(".") {
@@ -139,7 +139,9 @@ struct FileItem: Identifiable, Hashable {
                 self.fileExtension = ext.lowercased()
                 self.rawFileExtension = ext
             }
-            self.kindDescription = ext.isEmpty ? "Arkivfil" : "\(ext.uppercased())-arkivfil"
+            self.kindDescription = ext.isEmpty
+                ? tr("Arkivfil", "Archive File")
+                : "\(ext.uppercased())-\(tr("arkivfil", "archive file"))"
         }
     }
 
@@ -229,14 +231,16 @@ struct FileItem: Identifiable, Hashable {
         self.creationDate = resourceValues?.creationDate
 
         if targetFolder, let resolved {
-            self.kindDescription = "Snarvei → \(resolved.lastPathComponent)"
+            self.kindDescription = "\(tr("Snarvei", "Shortcut")) → \(resolved.lastPathComponent)"
         } else if let desc = resourceValues?.localizedTypeDescription {
             self.kindDescription = desc
         } else if let desc = (try? standardized.resourceValues(forKeys: [.localizedTypeDescriptionKey]))?.localizedTypeDescription {
             self.kindDescription = desc
         } else {
             let ext = standardized.pathExtension
-            self.kindDescription = isDir ? "Mappe" : (ext.isEmpty ? "Fil" : "\(ext.uppercased())-fil")
+            self.kindDescription = isDir
+                ? tr("Mappe", "Folder")
+                : (ext.isEmpty ? tr("Fil", "File") : "\(ext.uppercased())-\(tr("fil", "file"))")
         }
 
         self.cloudState = CloudStorageService.detectSyncState(
@@ -251,14 +255,14 @@ struct FileItem: Identifiable, Hashable {
             if let folderBytes = calculatedFolderSize {
                 return ByteFormatter.string(fromByteCount: folderBytes)
             }
-            return isShortcut ? "<SNARVEI>" : "<MAPPE>"
+            return isShortcut ? tr("<SNARVEI>", "<SHORTCUT>") : tr("<MAPPE>", "<FOLDER>")
         }
         return ByteFormatter.string(fromByteCount: size)
     }
 
     var formattedDate: String {
         guard let modificationDate else { return "—" }
-        return DateFormatterCache.compact.string(from: modificationDate)
+        return DateFormatterCache.compactString(from: modificationDate)
     }
 
     static func == (lhs: FileItem, rhs: FileItem) -> Bool {
@@ -268,7 +272,8 @@ struct FileItem: Identifiable, Hashable {
         lhs.cloudState == rhs.cloudState &&
         lhs.tagNames == rhs.tagNames &&
         lhs.labelNumber == rhs.labelNumber &&
-        lhs.relativeSubpath == rhs.relativeSubpath
+        lhs.relativeSubpath == rhs.relativeSubpath &&
+        lhs.kindDescription == rhs.kindDescription
     }
 
     func hash(into hasher: inout Hasher) {
@@ -277,6 +282,7 @@ struct FileItem: Identifiable, Hashable {
 }
 
 enum ByteFormatter {
+    private static let lock = NSLock()
     private static let formatter: ByteCountFormatter = {
         let f = ByteCountFormatter()
         f.allowedUnits = [.useBytes, .useKB, .useMB, .useGB, .useTB]
@@ -287,25 +293,82 @@ enum ByteFormatter {
     }()
 
     static func string(fromByteCount bytes: Int64) -> String {
-        formatter.string(fromByteCount: bytes)
+        lock.lock()
+        defer { lock.unlock() }
+        return formatter.string(fromByteCount: bytes)
     }
 }
 
 enum DateFormatterCache {
-    static let compact: DateFormatter = {
-        let df = DateFormatter()
-        df.locale = Locale(identifier: "nb_NO")
-        df.dateFormat = "dd.MM.yyyy HH:mm"
-        return df
-    }()
+    private static let lock = NSLock()
+    private static var compactCache: [String: DateFormatter] = [:]
+    private static var fullCache: [String: DateFormatter] = [:]
 
-    static let full: DateFormatter = {
+    static var compact: DateFormatter {
+        let loc = LocalizationCenter.shared.currentLanguage.locale
+        lock.lock()
+        defer { lock.unlock() }
+        if let existing = compactCache[loc.identifier] {
+            return existing
+        }
         let df = DateFormatter()
-        df.locale = Locale(identifier: "nb_NO")
+        df.locale = loc
+        df.dateStyle = .short
+        df.timeStyle = .short
+        compactCache[loc.identifier] = df
+        return df
+    }
+
+    static var full: DateFormatter {
+        let loc = LocalizationCenter.shared.currentLanguage.locale
+        lock.lock()
+        defer { lock.unlock() }
+        if let existing = fullCache[loc.identifier] {
+            return existing
+        }
+        let df = DateFormatter()
+        df.locale = loc
         df.dateStyle = .medium
         df.timeStyle = .medium
+        fullCache[loc.identifier] = df
         return df
-    }()
+    }
+
+    static func compactString(from date: Date) -> String {
+        let loc = LocalizationCenter.shared.currentLanguage.locale
+        lock.lock()
+        defer { lock.unlock() }
+        let df: DateFormatter
+        if let existing = compactCache[loc.identifier] {
+            df = existing
+        } else {
+            let created = DateFormatter()
+            created.locale = loc
+            created.dateStyle = .short
+            created.timeStyle = .short
+            compactCache[loc.identifier] = created
+            df = created
+        }
+        return df.string(from: date)
+    }
+
+    static func fullString(from date: Date) -> String {
+        let loc = LocalizationCenter.shared.currentLanguage.locale
+        lock.lock()
+        defer { lock.unlock() }
+        let df: DateFormatter
+        if let existing = fullCache[loc.identifier] {
+            df = existing
+        } else {
+            let created = DateFormatter()
+            created.locale = loc
+            created.dateStyle = .medium
+            created.timeStyle = .medium
+            fullCache[loc.identifier] = created
+            df = created
+        }
+        return df.string(from: date)
+    }
 }
 
 final class FileIconCache {

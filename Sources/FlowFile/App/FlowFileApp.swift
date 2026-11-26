@@ -88,12 +88,12 @@ struct FlowFileApp: App {
         .windowToolbarStyle(.unifiedCompact(showsTitle: false))
         .commands {
             CommandGroup(replacing: .newItem) {
-                Button("Ny fane") {
+                Button(workspace.tr("Ny fane", "New Tab")) {
                     workspace.activePane.addTab(showHidden: workspace.showHiddenFiles)
                 }
                 .keyboardShortcut("t", modifiers: [.command])
 
-                Button("Lukk aktiv fane") {
+                Button(workspace.tr("Lukk aktiv fane", "Close Active Tab")) {
                     let pane = workspace.activePane
                     if pane.tabs.count > 1 {
                         pane.closeTab(id: pane.activeTabID, showHidden: workspace.showHiddenFiles)
@@ -104,22 +104,34 @@ struct FlowFileApp: App {
 
                 Divider()
 
-                Button("Ny mappe...") {
+                Button(workspace.tr("Ny mappe...", "New Folder...")) {
                     workspace.promptNewFolder()
                 }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
 
-                Button("Ny tom fil...") {
+                Button(workspace.tr("Ny tom fil...", "New Empty File...")) {
                     workspace.promptNewFile()
                 }
                 .keyboardShortcut("n", modifiers: [.command, .option])
 
                 Divider()
 
-                Button("Smart Delingssenter (Del valgte)...") {
+                Button(workspace.tr("Smart Delingssenter (Del valgte)...", "Smart Share Hub (Share Selected)...")) {
                     workspace.openShareHub()
                 }
                 .keyboardShortcut("s", modifiers: [.command, .shift])
+            }
+
+            CommandGroup(replacing: .undoRedo) {
+                Button(workspace.tr("Angre filoperasjon", "Undo File Operation")) {
+                    if Self.isTextInputActive {
+                        NSApp.sendAction(Selector(("undo:")), to: nil, from: nil)
+                    } else {
+                        workspace.undoLastFileOperation()
+                    }
+                }
+                .keyboardShortcut("z", modifiers: [.command])
+                .disabled(!Self.isTextInputActive && !workspace.canUndoFileOperation)
             }
 
             CommandGroup(replacing: .pasteboard) {
@@ -161,18 +173,18 @@ struct FlowFileApp: App {
 
                 Divider()
 
-                Button("Kopier full sti") {
+                Button(workspace.tr("Kopier full sti", "Copy Full Path")) {
                     workspace.copyPathOfSelectedOrCurrent()
                 }
                 .keyboardShortcut("c", modifiers: [.command, .option])
 
-                Button("Gi nytt navn...") {
+                Button(workspace.tr("Gi nytt navn...", "Rename...")) {
                     workspace.promptRenameSelected()
                 }
 
                 Divider()
 
-                Button("Lyn-filter i aktiv mappe") {
+                Button(workspace.tr("Lyn-filter i aktiv mappe", "Instant Filter in Active Folder")) {
                     workspace.activeTab.isFilterBarVisible.toggle()
                 }
                 .keyboardShortcut("f", modifiers: [.command])
@@ -200,14 +212,18 @@ struct FlowFileApp: App {
                 }
                 .keyboardShortcut("b", modifiers: [.command, .option])
 
-                Button(workspace.isSidebarVisible ? "Skjul venstre sidepanel" : "Vis venstre sidepanel") {
+                Button(workspace.isSidebarVisible
+                       ? workspace.tr("Skjul venstre sidepanel", "Hide Left Sidebar")
+                       : workspace.tr("Vis venstre sidepanel", "Show Left Sidebar")) {
                     withAnimation(.snappy(duration: 0.2)) {
                         workspace.isSidebarVisible.toggle()
                     }
                 }
                 .keyboardShortcut("b", modifiers: [.command])
 
-                Button(workspace.isInspectorVisible ? "Skjul høyre infopanel" : "Vis høyre infopanel") {
+                Button(workspace.isInspectorVisible
+                       ? workspace.tr("Skjul høyre infopanel", "Hide Right Inspector")
+                       : workspace.tr("Vis høyre infopanel", "Show Right Inspector")) {
                     withAnimation(.snappy(duration: 0.2)) {
                         workspace.isInspectorVisible.toggle()
                     }
@@ -216,57 +232,59 @@ struct FlowFileApp: App {
 
                 Divider()
 
-                Button(workspace.showHiddenFiles ? "Skjul skjulte dot-filer" : "Vis skjulte dot-filer") {
+                Button(workspace.showHiddenFiles
+                       ? workspace.tr("Skjul skjulte dot-filer", "Hide Hidden Dotfiles")
+                       : workspace.tr("Vis skjulte dot-filer", "Show Hidden Dotfiles")) {
                     workspace.showHiddenFiles.toggle()
                 }
                 .keyboardShortcut(".", modifiers: [.command, .shift])
 
                 Divider()
 
-                Button("Detaljert tabellvisning") {
+                Button(workspace.tr("Detaljert tabellvisning", "Detailed List View")) {
                     workspace.activeTab.viewMode = .details
                 }
                 .keyboardShortcut("1", modifiers: [.command])
 
-                Button("Rutenettvisning (Miniatyrbilder)") {
+                Button(workspace.tr("Rutenettvisning (Miniatyrbilder)", "Grid View (Thumbnails)")) {
                     workspace.activeTab.viewMode = .grid
                 }
                 .keyboardShortcut("2", modifiers: [.command])
 
                 Divider()
 
-                Button("Oppdater") {
+                Button(workspace.tr("Oppdater", "Refresh")) {
                     workspace.refreshAllTabs()
                 }
                 .keyboardShortcut("r", modifiers: [.command])
             }
 
-            CommandMenu("Gå til") {
-                Button("Command Palette...") {
+            CommandMenu(workspace.tr("Gå til", "Go")) {
+                Button(workspace.tr("Command Palette...", "Command Palette...")) {
                     workspace.isCommandPaletteVisible.toggle()
                 }
                 .keyboardShortcut("p", modifiers: [.command])
 
-                Button("Rediger adresselinje") {
+                Button(workspace.tr("Rediger adresselinje", "Edit Address Bar")) {
                     workspace.focusAddressBar()
                 }
                 .keyboardShortcut("l", modifiers: [.command])
 
                 Divider()
 
-                Button("Tilbake") {
+                Button(workspace.tr("Tilbake", "Back")) {
                     workspace.activeTab.goBack(showHidden: workspace.showHiddenFiles)
                 }
                 .keyboardShortcut("[", modifiers: [.command])
                 .disabled(!workspace.activeTab.canGoBack)
 
-                Button("Frem") {
+                Button(workspace.tr("Frem", "Forward")) {
                     workspace.activeTab.goForward(showHidden: workspace.showHiddenFiles)
                 }
                 .keyboardShortcut("]", modifiers: [.command])
                 .disabled(!workspace.activeTab.canGoForward)
 
-                Button("Opp ett mappenivå") {
+                Button(workspace.tr("Opp ett mappenivå", "Up One Folder Level")) {
                     workspace.activeTab.goUp(showHidden: workspace.showHiddenFiles)
                 }
                 .keyboardShortcut(.upArrow, modifiers: [.command])
@@ -274,12 +292,12 @@ struct FlowFileApp: App {
 
                 Divider()
 
-                Button("Hjem") {
+                Button(workspace.tr("Hjem", "Home")) {
                     workspace.navigateActiveTab(to: FileManager.default.homeDirectoryForCurrentUser)
                 }
                 .keyboardShortcut("h", modifiers: [.command, .shift])
 
-                Button("Nedlastinger") {
+                Button(workspace.tr("Nedlastinger", "Downloads")) {
                     let dl = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads")
                     workspace.navigateActiveTab(to: dl)
                 }

@@ -31,6 +31,51 @@ jobs:
       - name: Run unit tests
         run: swift test
 
+      - name: Configure Developer ID signing & notarization (optional)
+        env:
+          DEVELOPER_ID_CERT_P12_BASE64: ${{ secrets.DEVELOPER_ID_CERT_P12_BASE64 }}
+          DEVELOPER_ID_CERT_PASSWORD: ${{ secrets.DEVELOPER_ID_CERT_PASSWORD }}
+          SIGN_IDENTITY_SECRET: ${{ secrets.SIGN_IDENTITY }}
+          ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+          ASC_KEY_ID_SECRET: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID_SECRET: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          if [[ -n "${DEVELOPER_ID_CERT_P12_BASE64}" && -n "${DEVELOPER_ID_CERT_PASSWORD}" && -n "${SIGN_IDENTITY_SECRET}" ]]; then
+            echo "[signing] Importing Developer ID certificate into temporary keychain..."
+            KEYCHAIN_PATH="${RUNNER_TEMP}/flowfile-signing.keychain-db"
+            KEYCHAIN_PASS="$(uuidgen)"
+            CERT_PATH="${RUNNER_TEMP}/flowfile-devid.p12"
+
+            echo "${DEVELOPER_ID_CERT_P12_BASE64}" | base64 --decode > "${CERT_PATH}"
+            chmod 600 "${CERT_PATH}"
+
+            security create-keychain -p "${KEYCHAIN_PASS}" "${KEYCHAIN_PATH}"
+            security set-keychain-settings -lut 21600 "${KEYCHAIN_PATH}"
+            security unlock-keychain -p "${KEYCHAIN_PASS}" "${KEYCHAIN_PATH}"
+            security import "${CERT_PATH}" -P "${DEVELOPER_ID_CERT_PASSWORD}" -A -t cert -f pkcs12 -k "${KEYCHAIN_PATH}"
+            security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${KEYCHAIN_PASS}" "${KEYCHAIN_PATH}"
+            security list-keychains -d user -s "${KEYCHAIN_PATH}" $(security list-keychains -d user | tr -d '"')
+
+            rm -f "${CERT_PATH}"
+
+            echo "FLOWFILE_TEMP_KEYCHAIN=${KEYCHAIN_PATH}" >> "$GITHUB_ENV"
+            echo "SIGN_IDENTITY=${SIGN_IDENTITY_SECRET}" >> "$GITHUB_ENV"
+
+            if [[ -n "${ASC_KEY_P8_BASE64}" && -n "${ASC_KEY_ID_SECRET}" && -n "${ASC_ISSUER_ID_SECRET}" ]]; then
+              ASC_KEY_PATH="${RUNNER_TEMP}/AuthKey_${ASC_KEY_ID_SECRET}.p8"
+              echo "${ASC_KEY_P8_BASE64}" | base64 --decode > "${ASC_KEY_PATH}"
+              chmod 600 "${ASC_KEY_PATH}"
+              echo "ASC_KEY_PATH=${ASC_KEY_PATH}" >> "$GITHUB_ENV"
+              echo "ASC_KEY_ID=${ASC_KEY_ID_SECRET}" >> "$GITHUB_ENV"
+              echo "ASC_ISSUER_ID=${ASC_ISSUER_ID_SECRET}" >> "$GITHUB_ENV"
+              echo "[signing] Apple Notarization (App Store Connect API Key) enabled."
+            else
+              echo "[signing] Developer ID signing enabled (no App Store Connect API key secrets; skipping notarization)."
+            fi
+          else
+            echo "[signing] No Developer ID secrets configured; falling back to ad-hoc signing."
+          fi
+
       - name: Build signed app bundle, APFS DMG & SHA-256 checksums
         env:
           PUBLISH_GITHUB: "0"
@@ -106,4 +151,15 @@ jobs:
           if ! git diff --cached --quiet; then
             git commit -m "Oppdater Homebrew Cask til v${RELEASE_VERSION}"
             git push origin main
+          fi
+
+      - name: Clean up temporary signing keychain & API key
+        if: always()
+        run: |
+          if [[ -n "${FLOWFILE_TEMP_KEYCHAIN:-}" ]]; then
+            security delete-keychain "${FLOWFILE_TEMP_KEYCHAIN}" || true
+          fi
+          rm -f "${RUNNER_TEMP}/flowfile-devid.p12"
+          if [[ -n "${ASC_KEY_PATH:-}" ]]; then
+            rm -f "${ASC_KEY_PATH}"
           fi

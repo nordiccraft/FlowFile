@@ -1,0 +1,267 @@
+/* FlowFile — Svenska */
+
+/* Language */
+"Automatic (follow macOS)" = "Automatiskt (följ macOS)";
+
+/* Menus — File */
+"New Tab" = "Ny flik";
+"Close Active Tab" = "Stäng aktiv flik";
+"New Folder..." = "Ny mapp...";
+"New Empty File..." = "Ny tom fil...";
+"Smart Share Hub (Share Selected)..." = "Smart delningscenter (Dela markerade)...";
+
+/* Menus — Edit */
+"Undo File Operation" = "Ångra filåtgärd";
+"Cut" = "Klipp ut";
+"Copy" = "Kopiera";
+"Paste" = "Klistra in";
+"Select All" = "Markera allt";
+"Copy Full Path" = "Kopiera fullständig sökväg";
+"Rename..." = "Byt namn...";
+"Instant Filter in Active Folder" = "Snabbfilter i aktiv mapp";
+"Deep Subfolder & Content Search..." = "Djupsök i undermappar & filinnehåll...";
+
+/* Menus — View */
+"View" = "Visning";
+"Switch to Single Pane" = "Byt till enkelpanel";
+"Switch to Dual-Pane" = "Byt till dubbelpanel";
+"Exit Flat Subfolder View" = "Avsluta platt undermappsvy";
+"Flat Subfolder View" = "Platt vy (alla filer från undermappar)";
+"Hide Left Sidebar" = "Dölj vänster sidopanel";
+"Show Left Sidebar" = "Visa vänster sidopanel";
+"Hide Right Inspector" = "Dölj höger infopanel";
+"Show Right Inspector" = "Visa höger infopanel";
+"Hide Hidden Dotfiles" = "Dölj dolda punktfiler";
+"Show Hidden Dotfiles" = "Visa dolda punktfiler";
+"Detailed List View" = "Detaljerad listvy";
+"Grid View (Thumbnails)" = "Rutnätsvy (Miniatyrer)";
+"Refresh" = "Uppdatera";
+
+/* Menus — Go */
+"Go" = "Gå";
+"Command Palette..." = "Kommandopalett...";
+"Edit Address Bar" = "Redigera adressfält";
+"Back" = "Bakåt";
+"Forward" = "Framåt";
+"Up One Folder Level" = "Upp en mappnivå";
+"Home" = "Hem";
+"Desktop" = "Skrivbord";
+"Downloads" = "Hämtade filer";
+"Documents" = "Dokument";
+"Applications" = "Program";
+
+/* Menus — Tools & App */
+"Tools" = "Verktyg";
+"Disk Space Analyzer..." = "Diskutrymmesanalys...";
+"Find Duplicate Files (SHA-256)..." = "Hitta dubblettfiler (SHA-256)...";
+"Save Current Workspace..." = "Spara nuvarande arbetsyta...";
+"Open Saved Workspace" = "Öppna sparad arbetsyta";
+"Batch Rename..." = "Massnamnbyte...";
+"Undo Last Batch Rename" = "Ångra senaste massnamnbyte";
+"Hide Drop Shelf & Queue" = "Dölj släpphylla & filkö";
+"Show Drop Shelf & Queue" = "Visa släpphylla & filkö";
+"Add Selected to Drop Shelf" = "Lägg markerade i släpphyllan";
+"Exit Folder Comparison" = "Avsluta mappjämförelse";
+"Compare Folders in Dual-Pane" = "Jämför mappar i dubbelpanel";
+"Synchronize Folders..." = "Synkronisera mappar...";
+"Convert / Resize Selected Images..." = "Konvertera / skala markerade bilder...";
+"Merge Selected into Single PDF" = "Slå samman markerade till en PDF";
+"Compress Selected to .zip" = "Komprimera markerade till .zip";
+"Extract Selected Archive Here" = "Packa upp markerat arkiv här";
+"Switch Active Pane" = "Byt aktiv panel";
+"Copy to Opposite Pane (F5)" = "Kopiera till motsatt panel (F5)";
+"Move to Opposite Pane (F6)" = "Flytta till motsatt panel (F6)";
+"Hide Embedded Terminal Drawer" = "Dölj inbyggd terminallåda";
+"Show Embedded Terminal Drawer" = "Visa inbyggd terminallåda";
+"Open macOS Terminal in Active Folder" = "Öppna macOS Terminal i aktiv mapp";
+"Check for Updates..." = "Sök efter uppdateringar...";
+"Settings..." = "Inställningar...";
+"Start Interactive Walkthrough (Practice Mode)..." = "Starta interaktiv genomgång (Övningsläge)...";
+
+/* Toolbar & Navigation */
+"New" = "Ny";
+"New Folder (F7)" = "Ny mapp (F7)";
+"New Empty File" = "Ny tom fil";
+"New Tab (Cmd+T)" = "Ny flik (Cmd+T)";
+"Rename" = "Byt namn";
+"Share" = "Dela";
+"Delete" = "Radera";
+"Exit Diff" = "Avsluta diff";
+"Go to" = "Gå till";
+"1-Pane" = "1-Panel";
+"Copy Path" = "Kopiera sökväg";
+"Copied!" = "Kopierad!";
+"Copied" = "Kopierad";
+"Edit" = "Redigera";
+"Copy →" = "Kopiera →";
+"Move →" = "Flytta →";
+"Copy (2-pane)" = "Kopiera (2-panel)";
+"Move (2-pane)" = "Flytta (2-panel)";
+"New Folder" = "Ny mapp";
+"Trash" = "Papperskorg";
+
+/* Sidebar */
+"Quick Access" = "Snabbåtkomst";
+"Workspaces" = "Arbetsytor";
+"Save current layout..." = "Spara nuvarande layout...";
+"Open Workspace" = "Öppna arbetsyta";
+"Delete Workspace" = "Ta bort arbetsyta";
+"Color Tags" = "Färgtaggar";
+"Cloud Storage" = "Molnlagring";
+"This Mac" = "Denna Mac";
+"Folder Tree" = "Mappträd";
+
+/* Table Columns, Context Menu & File Items */
+"Name" = "Namn";
+"Status" = "Status";
+"Ext" = "Ändelse";
+"Size" = "Storlek";
+"Modified" = "Ändrad";
+"Kind" = "Typ";
+"Details" = "Detaljer";
+"Grid" = "Rutnät";
+"Open" = "Öppna";
+"Open in New Tab" = "Öppna i ny flik";
+"Open in Opposite Pane" = "Öppna i motsatt panel";
+"Remove from Quick Access" = "Ta bort från Snabbåtkomst";
+"Pin to Quick Access" = "Fäst i Snabbåtkomst";
+"Show Package Contents as Folder" = "Visa paketinnehåll som mapp";
+"Go to Original Location in FlowFile" = "Gå till originalets plats i FlowFile";
+"Open File's Subfolder" = "Öppna filens undermapp";
+"Share... (⇧⌘S)" = "Dela... (⇧⌘S)";
+"Quick Look (Space)" = "Quick Look (Mellanslag)";
+"Open in Text Editor (F4)" = "Öppna i textredigerare (F4)";
+"Keep on This Mac (Download now)" = "Behåll på denna Mac (Hämta nu)";
+"Free Up Local Space (Online-only)" = "Frigör lokalt utrymme (Endast online)";
+"Mark / Calculate Folder Size (Shift+Space)" = "Markera / Beräkna mappstorlek (Shift+Mellanslag)";
+"Add to Drop Shelf (⇧⌘D)" = "Lägg i släpphylla (⇧⌘D)";
+"Cut (Cmd+X)" = "Klipp ut (Cmd+X)";
+"Copy (Cmd+C)" = "Kopiera (Cmd+C)";
+"Create Shortcut in Opposite Pane" = "Skapa genväg i motsatt panel";
+"Extract Entire Archive Here" = "Packa upp hela arkivet här";
+"Convert / Resize Image(s)..." = "Konvertera / skala bild(er)...";
+"Merge into Single PDF" = "Slå samman till en PDF";
+"Clear Color Tags (⌃0)" = "Rensa färgttaggar (⌃0)";
+"Rename... (F2)" = "Byt namn... (F2)";
+"Batch Rename... (Cmd+M)" = "Massnamnbyte... (Cmd+M)";
+"Move to Trash (Delete)" = "Flytta till papperskorgen (Delete)";
+"Delete Permanently... (Shift+Delete)" = "Radera permanent... (Shift+Delete)";
+"Extract Entire Archive to Folder" = "Packa upp hela arkivet till mapp";
+"Exit Archive (Backspace)" = "Lämna arkiv (Backsteg)";
+"Paste Here (Cmd+V)" = "Klistra in här (Cmd+V)";
+"New Folder... (F7)" = "Ny mapp... (F7)";
+"Deep Search Here... (⇧⌘F)" = "Djupsök här... (⇧⌘F)";
+"Analyze Disk Space Here..." = "Analysera diskutrymme här...";
+"Find Duplicate Files Here..." = "Hitta dubblettfiler här...";
+"Show/Hide Embedded Terminal Drawer (Ctrl+`)" = "Visa/dölj inbyggd terminallåda (Ctrl+`)";
+"Open in macOS Terminal" = "Öppna i macOS Terminal";
+"Reveal in macOS Finder" = "Visa i macOS Finder";
+"Cloud only" = "Endast i molnet";
+"Stored locally" = "Lagrad lokalt";
+"Syncing" = "Synkroniserar";
+"Folder Comparison" = "Mappjämförelse";
+"Git: Modified" = "Git: Ändrad";
+"Git: Staged" = "Git: Förberedd";
+"Git: Untracked" = "Git: Ospårad";
+"Git: Deleted" = "Git: Raderad";
+"Git: Conflict!" = "Git: Konflikt!";
+"Git: Ignored" = "Git: Ignorerad";
+"Archive Folder" = "Arkivmapp";
+"Archive File" = "Arkivfil";
+"archive file" = "arkivfil";
+"Shortcut" = "Genväg";
+"Folder" = "Mapp";
+"File" = "Fil";
+"file" = "fil";
+"<SHORTCUT>" = "<GENVÄG>";
+"<FOLDER>" = "<MAPP>";
+
+/* Color Tag Names */
+"Red" = "Röd";
+"Orange" = "Orange";
+"Yellow" = "Gul";
+"Green" = "Grön";
+"Blue" = "Blå";
+"Purple" = "Lila";
+"Gray" = "Grå";
+
+/* Settings & Dialogs */
+"FlowFile – Settings" = "FlowFile – Inställningar";
+"Done" = "Klar";
+"Language & User Guide" = "Språk & Användarguide";
+"Language:" = "Språk:";
+"Launch Interactive Tour" = "Starta interaktiv rundtur";
+"Direct Cloud Sharing (OneDrive & Google Drive OAuth)" = "Direkt molndelning (OneDrive & Google Drive OAuth)";
+"Sign Out" = "Logga ut";
+"Sign In with Microsoft" = "Logga in med Microsoft";
+"Sign In with Google" = "Logga in med Google";
+"Signed out of Microsoft OneDrive" = "Utloggad från Microsoft OneDrive";
+"Signed out of Google Drive" = "Utloggad från Google Drive";
+"Signed in to Microsoft OneDrive!" = "Inloggad på Microsoft OneDrive!";
+"Signed in to Google Drive!" = "Inloggad på Google Drive!";
+"Azure App Client ID (optional for direct links)" = "Azure App Client ID (valfritt för direktlänkar)";
+"Google OAuth Desktop Client ID" = "Google OAuth Desktop Client ID";
+"macOS Permissions" = "macOS-behörigheter";
+"FlowFile was updated and macOS reset permissions. Toggle Full Disk Access off and on in System Settings to restore." = "FlowFile uppdaterades och macOS återställde behörigheter. Slå av och på Full skivåtkomst i Systeminställningar för att återställa.";
+"Full Disk Access: Enabled" = "Full skivåtkomst: Aktiverad";
+"Full Disk Access: Not enabled" = "Full skivåtkomst: Inte aktiverad";
+"Full Disk Access" = "Full skivåtkomst";
+"Files & Folders" = "Filer och mappar";
+"Local Network" = "Lokalt nätverk";
+"Automation" = "Automatisering";
+"Default File Browser in macOS" = "Standardfilhanterare i macOS";
+"Current default: FlowFile" = "Nuvarande standard: FlowFile";
+"Current default: macOS Finder" = "Nuvarande standard: macOS Finder";
+"Re-apply FlowFile" = "Uppdatera registrering";
+"Set FlowFile as Default" = "Ange FlowFile som standard";
+"Restore Finder" = "Återställ till Finder";
+"Open external folders in:" = "Öppna externa mappar i:";
+"Keyboard & Quick Actions" = "Tangentbord & Snabbåtgärder";
+"Use Space for quick-mark + folder size (and Shift+Space / F3 for Quick Look)" = "Använd Mellanslag för snabbmarkering + mappstorlek (och Shift+Mellanslag / F3 för Quick Look)";
+"Always show bottom F3–F8 action bar (even in single-pane view)" = "Visa alltid F3–F8-åtgärdsraden längst ned (även i enkelpanelsvy)";
+"Sidebar & File View" = "Sidopanel & Filvy";
+"Auto-collapse left sidebar when switching to Dual-Pane (Cmd+D)" = "Dölj vänster sidopanel automatiskt vid byte till dubbelpanel (Cmd+D)";
+"Show hidden dotfiles (.dotfiles)" = "Visa dolda punktfiler (.dotfiles)";
+
+/* Prompt Dialogs & Errors */
+"Create New Folder" = "Skapa ny mapp";
+"Create New Empty File" = "Skapa ny tom fil";
+"Rename (F2)" = "Byt namn (F2)";
+"Delete Permanently?" = "Radera permanent?";
+"Folder name" = "Mappnamn";
+"File name (e.g. note.md)" = "Filnamn (t.ex. anteckning.md)";
+"Current name" = "Nuvarande namn";
+"New name" = "Nytt namn";
+"In" = "I";
+"more" = "till";
+"Cancel" = "Avbryt";
+"Create" = "Skapa";
+"Save Name" = "Spara namn";
+"Delete Permanently" = "Radera permanent";
+"The name cannot be empty." = "Namnet kan inte vara tomt.";
+"The name cannot contain “/” or “:”." = "Namnet kan inte innehålla ”/” eller ”:”.";
+"“%@” already exists in this folder." = "”%@” finns redan i den här mappen.";
+"No access to folder: %@" = "Ingen åtkomst till mappen: %@";
+"Action Could Not Be Completed" = "Åtgärden kunde inte utföras";
+
+/* Command Palette */
+"Jump to folder or run command..." = "Hoppa till mapp eller kör kommando...";
+"Recent Folder" = "Senaste mapp";
+"Subfolder" = "Undermapp";
+"Open FlowFile Settings" = "Öppna FlowFile-inställningar";
+"Language, cloud sharing, permissions, keyboard & sidebar" = "Språk, molndelning, behörigheter, tangentbord & sidopanel";
+"Smart Share Hub – Share Selected Files/Folders" = "Smart delningscenter – Dela markerade filer/mappar";
+"Multi-Rename Tool – Batch Rename" = "Multi-Rename Tool – Massnamnbyte";
+"Compare Left & Right Folders (Dual-Pane Diff)" = "Jämför vänster och höger mapp (Dual-Pane Diff)";
+"Create New Folder in Active Pane" = "Skapa ny mapp i aktiv panel";
+"Open Terminal in Active Folder" = "Öppna Terminal i aktiv mapp";
+"Copy Full Path to Clipboard" = "Kopiera fullständig sökväg till urklipp";
+"Folder Comparison Active" = "Mappjämförelse aktiv";
+"Hide identical" = "Dölj identiska";
+"Synchronize..." = "Synkronisera...";
+"Exit Comparison" = "Avsluta jämförelse";
+"Exit Flat View" = "Avsluta platt vy";
+"Show All" = "Visa alla";
+"Search Entire Mac" = "Sök på hela Macen";
+"LEFT" = "VÄNSTER";
+"RIGHT" = "HÖGER";

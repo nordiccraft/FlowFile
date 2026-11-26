@@ -48,6 +48,8 @@ final class LocalWiFiShareServer {
 
     /// Optional staging file owned by this active Wi-Fi share (cleaned up when `stop()` is called).
     var ownedStagingFileURL: URL? = nil
+    /// Called when an active share stops (or cleans up its staging directory) so views can invalidate cached staging URLs.
+    var onDidStop: (() -> Void)? = nil
 
     private var listener: NWListener?
     private var servedFileURL: URL?
@@ -202,6 +204,7 @@ final class LocalWiFiShareServer {
     }
 
     func stop() {
+        let wasActiveOrStaged = isRunning || ownedStagingFileURL != nil
         currentSessionID = UUID()
         autoExpireTask?.cancel()
         autoExpireTask = nil
@@ -219,6 +222,9 @@ final class LocalWiFiShareServer {
         if let staged = ownedStagingFileURL {
             ownedStagingFileURL = nil
             ShareHubService.cleanupStagingRoot(for: staged)
+        }
+        if wasActiveOrStaged {
+            onDidStop?()
         }
     }
 

@@ -2,6 +2,14 @@
 
 Alle viktige nyheter, forbedringer og feilrettinger i FlowFile dokumenteres her og vises direkte i oppdateringsvinduet i appen.
 
+## [1.3.0] - 2026-11-26
+
+- **Ekte Google Drive-, OneDrive- og Teams-deling (OAuth 2.0 PKCE):** 100 % native Swift-innlogging i Innstillinger (`⌘,`) med sikker lagring i macOS Keychain. Opprett ekte delingslenker direkte via Microsoft Graph (uten ny opplasting for filer som allerede ligger i OneDrive) og Google Drive API v3, og del lenker rett inn i Microsoft Teams-chat.
+- **Fikset Outlook-vedlegg, Teams/Slack dra-ut og QR-stabilitet:** Outlook som standard e-post åpner ikke lenger Apple Mail (ny to-lags vedleggsmotor med AppleScript + sikker fallback), ny dra-ut-filbrikke med «Hent Teams/Slack til front», AirDrop/Meldinger auto-zipper ikke lenger unødvendig, strømmende UTF-8-zip-patching og fikset Wi-Fi QR-cache.
+- **Støtte for 5 språk uten omstart:** Norsk Bokmål, English, Svenska, Dansk og Deutsch med umiddelbart språkbytte i Innstillinger, lokalisert datoformat og oppdaterte menyer/kolonner.
+- **Angre (`⌘Z`) og app-forbedringer:** Angre sletting til Papirkurv, omdøping og flytting (`⌘Z`), smartere omdøpingsdialog som beskytter `.filendelse` og validerer ugyldige tegn, auto-scroll + jokertegn i Command Palette (`⌘P`), og trådsikker filstørrelsesvisning.
+- **Klargjort for Developer ID + tillatelseshjelp etter oppdatering:** Bygg- og notariseringskjeden støtter nå `--timestamp`, notarisert `FlowFile-Update.zip` og automatisk signering via GitHub Secrets for permanente macOS-tillatelser, samt automatisk varsel med 1-klikks snarveier hvis macOS nullstiller tillatelser etter en ad-hoc-oppdatering.
+
 ## [1.2.3] - 2026-11-24
 
 - **Søk på hele Macen via macOS Spotlight:** Nytt valg *Hele Macen (Spotlight)* i Dypsøk (`⇧⌘F`) som finner f.eks. alle `*.apk`-filer på hele maskinen på under ett sekund – velges automatisk når du står på `Macintosh HD`.
