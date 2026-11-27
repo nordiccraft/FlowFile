@@ -158,17 +158,19 @@ func buildICNS(entries: [(ostype: String, pixelSize: Int)]) throws -> Data {
     return file
 }
 
+// Modern macOS PNG-native `.icns` chunks ONLY (`ic11`..`ic14`, `ic07`..`ic10`).
+// Note: `icp4` (16px) and `icp5` (32px) are intentionally omitted because macOS IconServices
+// (e.g. System Settings -> Full Disk Access) can misinterpret PNG data in `icp4`/`icp5` as raw ARGB noise;
+// omitting them makes macOS cleanly use `ic11` (32px PNG) and `ic12` (64px PNG) at small sizes.
 let icnsEntries: [(String, Int)] = [
-    ("icp4", 16),   // 16x16
-    ("ic11", 32),   // 16x16@2x
-    ("icp5", 32),   // 32x32
-    ("ic12", 64),   // 32x32@2x
-    ("ic07", 128),  // 128x128
-    ("ic13", 256),  // 128x128@2x
-    ("ic08", 256),  // 256x256
-    ("ic14", 512),  // 256x256@2x
-    ("ic09", 512),  // 512x512
-    ("ic10", 1024)  // 512x512@2x
+    ("ic11", 32),   // 16x16@2x (PNG)
+    ("ic12", 64),   // 32x32@2x (PNG)
+    ("ic07", 128),  // 128x128 (PNG)
+    ("ic13", 256),  // 128x128@2x (PNG)
+    ("ic08", 256),  // 256x256 (PNG)
+    ("ic14", 512),  // 256x256@2x (PNG)
+    ("ic09", 512),  // 512x512 (PNG)
+    ("ic10", 1024)  // 512x512@2x (PNG)
 ]
 
 let icnsData = try buildICNS(entries: icnsEntries)

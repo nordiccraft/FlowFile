@@ -2,6 +2,10 @@
 
 Alle viktige nyheter, forbedringer og feilrettinger i FlowFile dokumenteres her og vises direkte i oppdateringsvinduet i appen.
 
+## [1.3.1] - 2026-11-27
+
+- **Fikset app-ikon i små størrelser (Full disktilgang / Systeminnstillinger):** Fjernet `icp4`/`icp5`-blokker fra `AppIcon.icns` som macOS *IconServices* feiltolket som rå pikseldata ved 16–32 px, slik at FlowFile-ikonet nå vises skarpt og riktig overalt i Systeminnstillinger, Finder og Dock.
+
 ## [1.3.0] - 2026-11-26
 
 - **Ekte Google Drive-, OneDrive- og Teams-deling (OAuth 2.0 PKCE):** 100 % native Swift-innlogging i Innstillinger (`⌘,`) med sikker lagring i macOS Keychain. Opprett ekte delingslenker direkte via Microsoft Graph (uten ny opplasting for filer som allerede ligger i OneDrive) og Google Drive API v3, og del lenker rett inn i Microsoft Teams-chat.
